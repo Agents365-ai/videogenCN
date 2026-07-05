@@ -1,0 +1,12 @@
+# Claude Code
+CLAUDE.md
+
+# Python
+__pycache__/
+*.pyc
+
+# Generated media
+*.mp4
+
+# macOS
+.DS_Store
