@@ -29,22 +29,32 @@
 
 ## 安装技能
 
-**Claude Code(全局):**
+**365-Skills 市场（推荐）：**
 
 ```bash
-git clone https://github.com/Agents365-ai/videogenCN.git ~/.claude/skills/videogen-wan
+# 在 Claude Code 中 — 自动安装和更新
+/plugin install videogen-wan@365-skills
 ```
 
-**Claude Code(项目级):**
+**Claude Code（手动全局）：**
 
 ```bash
-git clone https://github.com/Agents365-ai/videogenCN.git .claude/skills/videogen-wan
+git clone https://github.com/Agents365-ai/videogenCN.git /tmp/videogenCN
+ln -s /tmp/videogenCN/skills/videogen-wan ~/.claude/skills/videogen-wan
 ```
 
-**OpenClaw:**
+**Claude Code（项目级）：**
 
 ```bash
-git clone https://github.com/Agents365-ai/videogenCN.git ~/.openclaw/skills/videogen-wan
+git clone https://github.com/Agents365-ai/videogenCN.git /tmp/videogenCN
+ln -s /tmp/videogenCN/skills/videogen-wan .claude/skills/videogen-wan
+```
+
+**OpenClaw：**
+
+```bash
+git clone https://github.com/Agents365-ai/videogenCN.git /tmp/videogenCN
+ln -s /tmp/videogenCN/skills/videogen-wan ~/.openclaw/skills/videogen-wan
 ```
 
 ## 系统要求

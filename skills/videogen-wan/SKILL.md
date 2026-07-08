@@ -1,6 +1,6 @@
 ---
 name: videogen-wan
-description: Use when generating video clips with Chinese video models — text-to-video (文生视频), image-to-video (图生视频), first/last-frame and reference-to-video with Wan (通义万相), PixVerse (爱诗), Kling (可灵), Vidu, HappyHorse, Jimeng (即梦), and MiniMax (海螺 AI) via Alibaba Bailian / Volcengine / MiniMax APIs
+description: Use when generating video clips with Chinese video models — text-to-video (文生视频), image-to-video (图生视频), first/last-frame and reference-to-video across 4 platforms: Bailian (Wan/PixVerse/Kling/Vidu/HappyHorse), Jimeng (doubao-seedance), MiniMax (Hailuo), Hunyuan (hy-video)
 author: Agents365-ai
 created: 2026-07-05
 updated: 2026-07-09
@@ -249,49 +249,49 @@ Claude runs the script with the approved prompt.
 
 ```bash
 # Bailian (default)
-python ~/.claude/skills/videogen-wan/scripts/generate_video.py \
+python scripts/generate_video.py \
   "一只柴犬在樱花树下奔跑,花瓣随风飘落,电影感镜头" shiba.mp4 \
   --duration 5 --resolution 1080P --ratio 16:9
 
 # Jimeng (即梦)
-python .../generate_video.py "一只柴犬在樱花树下奔跑" shiba.mp4 \
+python scripts/generate_video.py "一只柴犬在樱花树下奔跑" shiba.mp4 \
   --provider jimeng --duration 5
 
 # MiniMax (海螺)
-python .../generate_video.py "一只柴犬在樱花树下奔跑" shiba.mp4 \
+python scripts/generate_video.py "一只柴犬在樱花树下奔跑" shiba.mp4 \
   --provider minimax --duration 6
 ```
 
 ### Image-to-Video
 
 ```bash
-python .../generate_video.py "镜头缓缓推近,人物微笑" out.mp4 --image portrait.png
+python scripts/generate_video.py "镜头缓缓推近,人物微笑" out.mp4 --image portrait.png
 # Or with a third-party model (local file auto-uploaded):
-python .../generate_video.py "cinematic dolly-in" out.mp4 \
+python scripts/generate_video.py "cinematic dolly-in" out.mp4 \
   --image portrait.png -m pixverse/pixverse-c1-it2v
 # Jimeng i2v:
-python .../generate_video.py "镜头缓缓推近" out.mp4 \
+python scripts/generate_video.py "镜头缓缓推近" out.mp4 \
   --image portrait.png --provider jimeng
 ```
 
 ### First+Last Frame (kf2v)
 
 ```bash
-python .../generate_video.py "花苞缓缓绽放成盛开的牡丹" bloom.mp4 \
+python scripts/generate_video.py "花苞缓缓绽放成盛开的牡丹" bloom.mp4 \
   --image bud.png --last-frame bloom.png
 ```
 
 ### Reference-to-Video (r2v)
 
 ```bash
-python .../generate_video.py "@girl 在 @cafe 里弹吉他" out.mp4 \
+python scripts/generate_video.py "@girl 在 @cafe 里弹吉他" out.mp4 \
   --ref girl=girl.png --ref cafe=cafe.jpg
 ```
 
 ### Resume a Long-Running Task
 
 ```bash
-python .../generate_video.py --task-id <task-id> out.mp4
+python scripts/generate_video.py --task-id <task-id> out.mp4
 ```
 
 ### Options
@@ -352,27 +352,27 @@ Third-party models on Bailian (PixVerse/Kling/Vidu/HappyHorse) are **Beijing reg
 
 ```bash
 # Vertical short-video clip for Douyin/Xiaohongshu
-python .../generate_video.py "赛博朋克雨夜街头,霓虹灯倒映在积水中" \
+python scripts/generate_video.py "赛博朋克雨夜街头,霓虹灯倒映在积水中" \
   city.mp4 --ratio 9:16 --resolution 1080P
 
 # Multi-shot 15s narrative (wan2.7)
-python .../generate_video.py \
+python scripts/generate_video.py \
   "第1个镜头[0-5s]: 清晨的茶园,雾气缭绕。第2个镜头[5-10s]: 特写采茶人的手。第3个镜头[10-15s]: 茶叶在杯中舒展" \
   tea.mp4 --duration 15
 
 # Kling with audio, 10 seconds
-python .../generate_video.py "海浪拍打礁石,海鸥鸣叫" sea.mp4 \
+python scripts/generate_video.py "海浪拍打礁石,海鸥鸣叫" sea.mp4 \
   -m kling/kling-v3-video-generation --audio --duration 10
 
 # Character-consistent scene from reference images (PixVerse r2v)
-python .../generate_video.py "@hero 挥剑劈开 @monster,火花四溅" fight.mp4 \
+python scripts/generate_video.py "@hero 挥剑劈开 @monster,火花四溅" fight.mp4 \
   --ref hero=hero.png --ref monster=monster.png -m pixverse/pixverse-c1-r2v
 
 # Jimeng t2v, vertical format
-python .../generate_video.py "城市日落延时摄影,天空由橙变紫" sunset.mp4 \
+python scripts/generate_video.py "城市日落延时摄影,天空由橙变紫" sunset.mp4 \
   --provider jimeng --duration 10 --ratio 9:16
 
 # MiniMax t2v with image animation
-python .../generate_video.py "细雨中的古镇小巷,青石板路反光" rain.mp4 \
+python scripts/generate_video.py "细雨中的古镇小巷,青石板路反光" rain.mp4 \
   --provider minimax --duration 6
 ```
