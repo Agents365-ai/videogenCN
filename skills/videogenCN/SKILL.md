@@ -1,5 +1,5 @@
 ---
-name: videogen-wan
+name: videogenCN
 description: Use when generating video clips with Chinese video models — text-to-video (文生视频), image-to-video (图生视频), first/last-frame and reference-to-video across 4 platforms: Bailian (Wan/PixVerse/Kling/Vidu/HappyHorse), Jimeng (doubao-seedance), MiniMax (Hailuo), Hunyuan (hy-video)
 author: Agents365-ai
 created: 2026-07-05
@@ -8,7 +8,7 @@ homepage: https://github.com/Agents365-ai/videogenCN
 metadata: {"openclaw":{"requires":{"bins":["python3"],"env":["DASHSCOPE_API_KEY"]},"primaryEnv":"DASHSCOPE_API_KEY","emoji":"🎬"}}
 ---
 
-# Videogen-Wan - Chinese Video Generation Skill
+# videogenCN - Chinese Video Generation Skill
 
 ## Overview
 
