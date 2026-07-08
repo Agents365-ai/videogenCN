@@ -29,7 +29,7 @@ A Claude Code / OpenClaw skill for generating video clips with Chinese video mod
 
 ## Pipeline
 
-![videogenCN Pipeline](assets/workflow.png)
+![videogenCN Pipeline](assets/workflow-en.png)
 
 ## Install the Skill
 

@@ -29,7 +29,7 @@
 
 ## 流程图
 
-![videogenCN 流程图](assets/workflow.png)
+![videogenCN 流程图](assets/workflow-zh.png)
 
 ## 安装技能
 
