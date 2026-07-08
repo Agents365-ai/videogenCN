@@ -2,17 +2,17 @@
 
 [中文文档](README_CN.md)
 
-A Claude Code / OpenClaw skill for generating video clips with Chinese video models across three providers — Alibaba Bailian (Wan/PixVerse/Kling/Vidu/HappyHorse), Volcengine Ark (Jimeng/即梦), and MiniMax (海螺 AI).
+A Claude Code / OpenClaw skill for generating video clips with Chinese video models across four providers — Alibaba Bailian (Wan/PixVerse/Kling/Vidu/HappyHorse), Volcengine Ark (Jimeng/即梦), MiniMax (海螺 AI), and Tencent Hunyuan (混元).
 
 ## Why This Skill?
 
 | | Native Claude Code | videogenCN |
 |---|---|---|
-| Text-to-video | ❌ | ✅ 7 model families across 3 providers |
+| Text-to-video | ❌ | ✅ 7 model families across 4 providers |
 | Image-to-video | ❌ | ✅ Animate any still image |
 | First+last frame (kf2v) | ❌ | ✅ PixVerse / Kling / Vidu |
 | Reference-to-video (r2v) | ❌ | ✅ Character-consistent clips |
-| Multi-provider | ❌ | ✅ Bailian + Jimeng + MiniMax |
+| Multi-provider | ❌ | ✅ Bailian + Jimeng + MiniMax + Hunyuan |
 | Chinese prompts | — | ✅ First-class |
 | Async task handling | — | ✅ Submit → poll → download, resumable |
 | Vertical (9:16) video | — | ✅ For Douyin / Xiaohongshu / Shorts |
@@ -20,7 +20,7 @@ A Claude Code / OpenClaw skill for generating video clips with Chinese video mod
 ## Features
 
 - **Four modes, one script**: prompt → t2v; `--image` → i2v; `+ --last-frame` → kf2v; `--ref name=img` → r2v
-- **Seven model families across three providers**: Bailian (Wan, PixVerse, Kling, Vidu, HappyHorse), Jimeng (Volcengine), MiniMax (Hailuo)
+- **Seven model families across four providers**: Bailian (Wan, PixVerse, Kling, Vidu, HappyHorse), Jimeng (Volcengine), MiniMax (Hailuo), Hunyuan (Tencent)
 - **Provider auto-detection**: `--provider` flag or auto-detect from model name; backward compatible
 - **Local images just work**: base64 for Wan/HappyHorse/Jimeng; auto-upload for PixVerse/Kling/Vidu/MiniMax
 - **Multi-shot narratives**: `wan2.7-t2v` renders up to 15s with per-shot descriptions
@@ -74,6 +74,7 @@ ln -s /tmp/videogenCN/skills/videogenCN ~/.openclaw/skills/videogenCN
 | **Bailian** (Wan/PixVerse/Kling/Vidu/HappyHorse) | `DASHSCOPE_API_KEY` | https://bailian.console.aliyun.com/ |
 | **Jimeng** (即梦) | `ARK_API_KEY` | https://console.volcengine.com/ark/ |
 | **MiniMax** (海螺 AI) | `MINIMAX_API_KEY` | https://platform.minimax.io |
+| **Hunyuan** (混元) | `HUNYUAN_API_KEY` | https://console.cloud.tencent.com/hunyuan |
 
 ```bash
 # Bailian (required for default provider)
@@ -84,6 +85,9 @@ export ARK_API_KEY='your-api-key'
 
 # MiniMax (optional)
 export MINIMAX_API_KEY='your-api-key'
+
+# Hunyuan (optional)
+export HUNYUAN_API_KEY='your-api-key'
 ```
 
 Optional environment variables:
@@ -117,6 +121,9 @@ python scripts/generate_video.py "城市日落延时摄影" sunset.mp4 --provide
 
 # MiniMax (海螺)
 python scripts/generate_video.py "海浪拍打礁石" ocean.mp4 --provider minimax --duration 6
+
+# Hunyuan (混元)
+python scripts/generate_video.py "金黄色的麦田在秋风中起伏" field.mp4 --provider hunyuan --duration 5
 ```
 
 ## Models
@@ -146,6 +153,14 @@ python scripts/generate_video.py "海浪拍打礁石" ocean.mp4 --provider minim
 | MiniMax | `video-01` (t2v/i2v default) | t2v, i2v | 6s |
 
 > ✅ Tested: t2v 6s, ~3 min, 2.9 MB MP4
+
+### Hunyuan (混元 / Tencent)
+
+| Family | Models | Modes | Duration |
+|--------|--------|-------|----------|
+| Hunyuan | `hy-video-1.5` (t2v/i2v default), `yt-video-2.0` (i2v, experimental), `yt-video-fx` (i2v, experimental), `yt-video-humanactor` (i2v, experimental) | t2v, i2v | 5–10s |
+
+> ⚠️ **Note**: `--duration` and `--seed` supported on `hy-video-1.5` only. `--resolution`, `--ratio`, `--audio`, and `--camera-motion` are not yet available for Hunyuan. Experimental models (yt-video-*) are i2v-only with basic prompt+image support.
 
 Run `python scripts/generate_video.py --list-models` for the current list. Third-party Bailian families are Beijing region (`cn`) only.
 

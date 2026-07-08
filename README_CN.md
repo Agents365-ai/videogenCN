@@ -2,17 +2,17 @@
 
 [English](README.md)
 
-一个 Claude Code / OpenClaw 技能，通过三大平台调用国产视频大模型生成视频片段 —— 阿里云百炼（万相/PixVerse/可灵/Vidu/HappyHorse）、火山引擎（即梦）、MiniMax（海螺 AI）。
+一个 Claude Code / OpenClaw 技能，通过四大平台调用国产视频大模型生成视频片段 —— 阿里云百炼（万相/PixVerse/可灵/Vidu/HappyHorse）、火山引擎（即梦）、MiniMax（海螺 AI）、腾讯混元。
 
 ## 为什么选择这个技能
 
 | | 原生 Claude Code | videogenCN |
 |---|---|---|
-| 文生视频 | ❌ | ✅ 7 个模型家族，3 个平台 |
+| 文生视频 | ❌ | ✅ 7 个模型家族，4 个平台 |
 | 图生视频 | ❌ | ✅ 让任意静态图片动起来 |
 | 首尾帧生视频 | ❌ | ✅ PixVerse / Kling / Vidu |
 | 参考生视频(角色一致性) | ❌ | ✅ PixVerse r2v / Kling omni |
-| 多平台 | ❌ | ✅ 百炼 + 即梦 + MiniMax |
+| 多平台 | ❌ | ✅ 百炼 + 即梦 + MiniMax + 混元 |
 | 中文提示词 | — | ✅ 原生支持 |
 | 异步任务处理 | — | ✅ 提交 → 轮询 → 下载，可断点续接 |
 | 竖屏(9:16)视频 | — | ✅ 适配抖音 / 小红书 / Shorts |
@@ -20,7 +20,7 @@
 ## 特性
 
 - **一个脚本四种模式**:提示词 → 文生视频;`--image` → 图生视频;再加 `--last-frame` → 首尾帧;`--ref 名字=图片` → 参考生视频
-- **七大模型家族、三大平台**:百炼(万相、PixVerse、可灵、Vidu、HappyHorse)、火山引擎(即梦)、MiniMax(海螺)
+- **七大模型家族、四大平台**:百炼(万相、PixVerse、可灵、Vidu、HappyHorse)、火山引擎(即梦)、MiniMax(海螺)、腾讯混元
 - **平台自动检测**:`--provider` 参数手动指定，或从模型名自动检测；完全向后兼容
 - **本地图片直接用**:万相/HappyHorse/即梦走 base64;PixVerse/可灵/Vidu 自动上传 OSS;MiniMax 通过文件 API 上传
 - **多镜头叙事**:`wan2.7-t2v` 支持最长 15 秒、按镜头分段描述
@@ -74,6 +74,7 @@ ln -s /tmp/videogenCN/skills/videogenCN ~/.openclaw/skills/videogenCN
 | **百炼** (万相/PixVerse/可灵/Vidu/HappyHorse) | `DASHSCOPE_API_KEY` | https://bailian.console.aliyun.com/ |
 | **即梦** (火山引擎) | `ARK_API_KEY` | https://console.volcengine.com/ark/ |
 | **MiniMax** (海螺 AI) | `MINIMAX_API_KEY` | https://platform.minimax.io |
+| **混元** (腾讯) | `HUNYUAN_API_KEY` | https://console.cloud.tencent.com/hunyuan |
 
 ```bash
 # 百炼（默认平台，必填）
@@ -84,6 +85,9 @@ export ARK_API_KEY='your-api-key'
 
 # MiniMax（可选）
 export MINIMAX_API_KEY='your-api-key'
+
+# 混元（可选）
+export HUNYUAN_API_KEY='your-api-key'
 ```
 
 可选环境变量:
@@ -117,6 +121,9 @@ python scripts/generate_video.py "城市日落延时摄影" sunset.mp4 --provide
 
 # MiniMax 图生视频
 python scripts/generate_video.py "镜头缓缓推近" out.mp4 --image photo.png --provider minimax
+
+# 混元文生视频
+python scripts/generate_video.py "金黄色的麦田在秋风中起伏" field.mp4 --provider hunyuan --duration 5
 ```
 
 ## 模型
@@ -146,6 +153,14 @@ python scripts/generate_video.py "镜头缓缓推近" out.mp4 --image photo.png 
 | MiniMax | `video-01`(文生/图生视频默认) | 文生、图生 | 6s |
 
 > ✅ 已实测：文生视频 6s，约 3 分钟，2.9 MB MP4
+
+### 混元 Hunyuan (腾讯)
+
+| 家族 | 模型 | 模式 | 时长 |
+|------|------|------|------|
+| 混元 | `hy-video-1.5`(文生/图生视频默认), `yt-video-2.0`(图生，实验性), `yt-video-fx`(图生，实验性), `yt-video-humanactor`(图生，实验性) | 文生、图生 | 5–10s |
+
+> ⚠️ **注意**：`--duration` 和 `--seed` 仅对 `hy-video-1.5` 生效。`--resolution`、`--ratio`、`--audio` 和 `--camera-motion` 暂不支持混元。实验性模型（yt-video-*）仅支持图生视频，参数为基础 prompt+image。
 
 运行 `python scripts/generate_video.py --list-models` 查看当前列表。百炼第三方模型仅限北京(`cn`)地域。
 

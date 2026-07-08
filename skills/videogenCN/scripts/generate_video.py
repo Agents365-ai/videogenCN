@@ -2,7 +2,7 @@
 """Generate video clips via multiple Chinese video generation providers.
 
 Providers: Alibaba Bailian (Wan/PixVerse/Kling/Vidu/HappyHorse),
-           Jimeng (Volcengine Ark), MiniMax (Hailuo).
+           Jimeng (Volcengine Ark), MiniMax (Hailuo), Hunyuan (Tencent).
 Modes: text-to-video (t2v), image-to-video (i2v), first+last frame (kf2v),
 reference-to-video (r2v). Tasks are async: submit -> poll -> download.
 
@@ -11,7 +11,7 @@ Usage:
   python generate_video.py "prompt" out.mp4 --image first.png              # i2v
   python generate_video.py "prompt" out.mp4 --image a.png --last-frame b.png  # kf2v
   python generate_video.py "@girl dancing" out.mp4 --ref girl=girl.png     # r2v
-  python generate_video.py --task-id <id> out.mp4                          # resume
+  python generate_video.py --task-id <id> --provider <name> out.mp4        # resume
   python generate_video.py --list-models
 """
 
@@ -30,6 +30,9 @@ except ImportError:
     sys.exit(1)
 
 from providers import get_provider, detect_provider, list_providers, register_providers
+from providers.base import (GenerationRequest, VideoGenError, ConfigError,
+                            InputError, APIError, TaskFailedError, TaskTimeoutError)
+from providers.base import safe_request
 
 
 # ---------------------------------------------------------------------------
@@ -38,18 +41,25 @@ from providers import get_provider, detect_provider, list_providers, register_pr
 
 def download_video(url: str, output_path: Path) -> int:
     """Download a video from URL, write to output_path, return byte count."""
-    rsp = requests.get(url, timeout=300)
-    rsp.raise_for_status()
+    rsp = safe_request("GET", url, timeout=300, label="Video download")
+    if rsp.status_code != 200:
+        raise APIError(
+            f"video download failed (HTTP {rsp.status_code}): {rsp.text[:300]}")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(rsp.content)
     return len(rsp.content)
 
 
 def parse_ref(ref: str) -> tuple[str | None, str]:
-    """Parse --ref 'name=path_or_url' or plain 'path_or_url' -> (name, value)."""
-    if "=" in ref and "://" not in ref.split("=", 1)[0] and not os.path.exists(ref):
+    """Parse --ref 'name=path_or_url' or plain 'path_or_url' -> (name, value).
+
+    Only treats the value as a named reference when 'name' matches an identifier
+    pattern and the value does NOT look like a real filesystem path.
+    """
+    if "=" in ref:
         name, value = ref.split("=", 1)
-        return name, value
+        if name.isidentifier() and not os.path.exists(ref):
+            return name, value
     return None, ref
 
 
@@ -65,15 +75,15 @@ def detect_mode(args) -> str:
 
 
 def _detect_provider_from_task(task_id: str):
-    """Detect provider from task ID format. Falls back to Bailian."""
-    # Ark task IDs: cgt-YYYYMMDDhhmmss-xxxxx
+    """Detect provider from task ID format.
+
+    Returns (provider, is_confident).
+    """
     if task_id.startswith("cgt-"):
-        return get_provider("jimeng")
-    # MiniMax task IDs: pure numeric (e.g. "417527150997914")
+        return get_provider("jimeng"), True
     if task_id.isdigit():
-        return get_provider("minimax")
-    # Default: Bailian
-    return get_provider("bailian")
+        return get_provider("minimax"), True
+    return get_provider("bailian"), False
 
 
 # ---------------------------------------------------------------------------
@@ -86,7 +96,7 @@ def main():
 
     parser = argparse.ArgumentParser(
         description="Generate video via Chinese video models "
-                    "(Bailian Wan/PixVerse/Kling/Vidu/HappyHorse, Jimeng, MiniMax)")
+                    "(Bailian Wan/PixVerse/Kling/Vidu/HappyHorse, Jimeng, MiniMax, Hunyuan)")
     parser.add_argument("prompt", nargs="?", help="video description")
     parser.add_argument("output", nargs="?", default="./generated-video.mp4",
                         help="output MP4 path (default: ./generated-video.mp4)")
@@ -103,24 +113,50 @@ def main():
     parser.add_argument("-r", "--resolution", default="1080P",
                         choices=["360P", "480P", "540P", "720P", "1080P"],
                         help="output resolution (default: 1080P)")
-    parser.add_argument("--ratio", default="16:9", choices=["16:9", "9:16"],
+    parser.add_argument("--ratio", default="16:9",
+                        choices=["16:9", "9:16", "1:1", "3:4", "4:3", "21:9"],
                         help="aspect ratio (default: 16:9)")
     parser.add_argument("-s", "--size", help="exact size 'W*H' for size-based models")
     parser.add_argument("-n", "--negative", help="negative prompt (Wan only)")
     parser.add_argument("--no-prompt-extend", action="store_true",
                         help="disable automatic prompt rewriting (Wan only)")
+    parser.add_argument("--no-prompt-optimizer", action="store_true",
+                        help="disable built-in prompt optimizer (MiniMax only)")
     parser.add_argument("--audio", action="store_true",
-                        help="enable audio on PixVerse/Kling/Vidu/Jimeng (default off for third-party)")
+                        help="enable audio on PixVerse/Kling/Vidu/Jimeng (default off)")
     parser.add_argument("--no-audio", action="store_true",
                         help="silent output on Wan models that default to audio")
     parser.add_argument("--camera-motion",
-                        help="camera motion description (Jimeng Seedance 2.0; e.g. 'slow push-in, orbit right')")
+                        help="camera motion description (Jimeng Seedance 2.0)")
     parser.add_argument("--seed", type=int, help="random seed for reproducibility")
-    parser.add_argument("--task-id", help="resume polling an existing task (auto-detect provider from ID)")
+    parser.add_argument("--task-id", help="resume polling an existing task")
     parser.add_argument("--list-models", action="store_true", help="list all models and exit")
     args = parser.parse_args()
 
-    # --list-models: print from selected provider(s)
+    try:
+        _run(args, available)
+    except ConfigError as e:
+        print(f"Configuration error: {e}", file=sys.stderr)
+        sys.exit(e.exit_code)
+    except InputError as e:
+        print(f"Input error: {e}", file=sys.stderr)
+        sys.exit(e.exit_code)
+    except APIError as e:
+        print(f"API error: {e}", file=sys.stderr)
+        sys.exit(e.exit_code)
+    except TaskFailedError as e:
+        print(f"Task failed: {e}", file=sys.stderr)
+        sys.exit(e.exit_code)
+    except TaskTimeoutError as e:
+        print(f"Timeout: {e}", file=sys.stderr)
+        sys.exit(e.exit_code)
+    except VideoGenError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(e.exit_code)
+
+
+def _run(args, available):
+    # --list-models
     if args.list_models:
         names = [args.provider] if args.provider else available
         for name in names:
@@ -135,12 +171,15 @@ def main():
         if args.provider:
             provider = get_provider(args.provider)
         else:
-            provider = _detect_provider_from_task(args.task_id)
+            provider, confident = _detect_provider_from_task(args.task_id)
+            if not confident:
+                print(f"Warning: cannot auto-detect provider from task ID "
+                      f"'{args.task_id}'.", file=sys.stderr)
+                print(f"Defaulting to '{provider.name}'. "
+                      f"If wrong, re-run with --provider.", file=sys.stderr)
+                print(f"Available: {', '.join(available)}", file=sys.stderr)
         print(f"Resuming task {args.task_id} via provider: {provider.name}")
         video_url = provider.poll(args.task_id)
-        if not video_url:
-            print("Error: task succeeded but no video_url in response", file=sys.stderr)
-            sys.exit(1)
         output_path = Path(args.output)
         print("Downloading video (result URLs expire after 24h)...")
         size = download_video(video_url, output_path)
@@ -149,9 +188,9 @@ def main():
 
     # Normal generation flow
     if not args.prompt:
-        parser.error("prompt is required (or use --task-id / --list-models)")
+        raise InputError("prompt is required (or use --task-id / --list-models)")
     if args.last_frame and not args.image:
-        parser.error("--last-frame requires --image (the first frame)")
+        raise InputError("--last-frame requires --image (the first frame)")
 
     # Provider selection
     if args.provider:
@@ -162,9 +201,9 @@ def main():
     # Mode detection
     mode = detect_mode(args)
     if mode not in provider.supported_modes:
-        print(f"Error: provider '{provider.name}' does not support mode '{mode}'. "
-              f"Supported: {', '.join(provider.supported_modes)}", file=sys.stderr)
-        sys.exit(1)
+        raise InputError(
+            f"provider '{provider.name}' does not support mode '{mode}'. "
+            f"Supported: {', '.join(provider.supported_modes)}")
 
     # Model selection
     model_env = provider.model_env_var
@@ -172,6 +211,25 @@ def main():
              or (os.environ.get(model_env) if model_env else None)
              or provider.default_models[mode])
     provider.check_mode(model, mode)
+
+    # Build GenerationRequest
+    req = GenerationRequest(
+        prompt=args.prompt,
+        mode=mode,
+        model=model,
+        duration=args.duration,
+        resolution=args.resolution,
+        ratio=args.ratio,
+        size=args.size,
+        negative=args.negative,
+        seed=args.seed,
+        no_prompt_extend=args.no_prompt_extend,
+        no_prompt_optimizer=args.no_prompt_optimizer,
+        audio=args.audio,
+        no_audio=args.no_audio,
+        camera_motion=args.camera_motion,
+    )
+    provider.validate_params(req)
 
     # Resolve media
     oss_used = False
@@ -190,23 +248,13 @@ def main():
         oss_used = oss_used or oss
 
     # Build body, submit, poll
-    body = provider.build_body(model, mode, args, image_url, last_url, refs)
+    body = provider.build_body(req, image_url, last_url, refs)
     print(f"Model: {model} (provider: {provider.name}, mode: {mode})")
-
-    # Bailian submit() accepts oss_used flag; other providers ignore it
-    import inspect
-    sig = inspect.signature(provider.submit)
-    if "oss_used" in sig.parameters:
-        task_id = provider.submit(body, oss_used=oss_used)
-    else:
-        task_id = provider.submit(body)
+    task_id = provider.submit(body, oss_used=oss_used)
 
     print(f"Task submitted: {task_id}")
     video_url = provider.poll(task_id)
 
-    if not video_url:
-        print("Error: task succeeded but no video_url in response", file=sys.stderr)
-        sys.exit(1)
     print("Downloading video (result URLs expire after 24h)...")
     output_path = Path(args.output)
     size = download_video(video_url, output_path)
