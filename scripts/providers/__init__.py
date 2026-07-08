@@ -6,10 +6,11 @@ _providers: dict[str, "VideoProvider"] = {}
 def register_providers():
     """Register all built-in providers. Called once at startup."""
     from providers.bailian import BailianProvider
+    from providers.hunyuan import HunyuanProvider
     from providers.jimeng import JimengProvider
     from providers.minimax import MiniMaxProvider
 
-    for p in [BailianProvider(), JimengProvider(), MiniMaxProvider()]:
+    for p in [BailianProvider(), HunyuanProvider(), JimengProvider(), MiniMaxProvider()]:
         _providers[p.name] = p
 
 
@@ -36,6 +37,8 @@ def detect_provider(model: str | None) -> "VideoProvider":
         return _providers.get("jimeng", _providers["bailian"])
     if m.startswith(("minimax", "hailuo", "video-")):
         return _providers.get("minimax", _providers["bailian"])
+    if m.startswith(("hy-video", "hunyuan", "yt-video")):
+        return _providers.get("hunyuan", _providers["bailian"])
     return _providers["bailian"]
 
 
