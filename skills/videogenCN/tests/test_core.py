@@ -157,7 +157,7 @@ class TestCliHelpers:
             last_frame = None
 
         with pytest.raises(InputError, match="prompt is required"):
-            _run(A(), ["bailian"])
+            _run(A(), ["bailian"], "table")
 
     def test_run_last_frame_without_image_raises_input_error(self):
         import pytest
@@ -170,7 +170,7 @@ class TestCliHelpers:
             image = None
 
         with pytest.raises(InputError, match="--last-frame requires --image"):
-            _run(A(), ["bailian"])
+            _run(A(), ["bailian"], "table")
 
     def test_download_video_non_200_raises_api_error(self, tmp_path):
         import pytest
@@ -180,7 +180,7 @@ class TestCliHelpers:
         mock_rsp.text = "expired"
         mock_rsp.content = b""
 
-        with patch("generate_video.safe_request", return_value=mock_rsp):
+        with patch("generate_video._safe_request", return_value=mock_rsp):
             with pytest.raises(APIError, match="video download failed"):
                 download_video("http://x.com/expired.mp4", tmp_path / "out.mp4")
 
