@@ -147,10 +147,42 @@ Run `python scripts/generate_video.py --list-models` for the current list. Third
 
 > **Cost**: video generation bills per second of output (roughly $0.04–0.14/s depending on model and resolution). Result URLs expire after 24h — the script downloads immediately.
 
+## Support
+
+If this project helps you, consider supporting the author:
+
+<table>
+  <tr>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/Agents365-ai/images_payment/main/qrcode/wechat-pay.png" width="180" alt="WeChat Pay">
+      <br>
+      <b>WeChat Pay</b>
+    </td>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/Agents365-ai/images_payment/main/qrcode/alipay.png" width="180" alt="Alipay">
+      <br>
+      <b>Alipay</b>
+    </td>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/Agents365-ai/images_payment/main/qrcode/buymeacoffee.png" width="180" alt="Buy Me a Coffee">
+      <br>
+      <b>Buy Me a Coffee</b>
+    </td>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/Agents365-ai/images_payment/main/awarding/award.gif" width="180" alt="Give a Reward">
+      <br>
+      <b>Give a Reward</b>
+    </td>
+  </tr>
+</table>
+
 ## License
 
 MIT
 
 ## Author
 
-**Agents365-ai** — [GitHub](https://github.com/Agents365-ai)
+**Agents365-ai**
+
+- Bilibili: https://space.bilibili.com/441831884
+- GitHub: https://github.com/Agents365-ai
