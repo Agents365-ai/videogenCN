@@ -65,8 +65,8 @@ class JimengProvider(VideoProvider):
     # ------------------------------------------------------------------
 
     def resolve_media(self, path_or_url: str, model: str = "") -> tuple[str, bool]:
-        """Jimeng Ark API accepts HTTP(S) URLs. Local files are base64-encoded."""
-        if path_or_url.startswith(("http://", "https://")):
+        """Jimeng Ark API accepts HTTP(S) URLs or base64 data URIs for images."""
+        if path_or_url.startswith(("http://", "https://", "data:")):
             return path_or_url, False
         if not os.path.exists(path_or_url):
             print(f"Error: image not found: {path_or_url}", file=sys.stderr)
@@ -83,27 +83,36 @@ class JimengProvider(VideoProvider):
     def build_body(self, model: str, mode: str, args,
                    image_url: Optional[str], last_url: Optional[str],
                    refs: list[tuple[Optional[str], str]]) -> dict:
-        # Build content array (Ark API uses content blocks)
+        # Build content array (Ark API uses content blocks with nested image_url)
         content: list[dict] = []
         if mode == "i2v" and image_url:
-            if image_url.startswith(("http://", "https://")):
-                content.append({"type": "image_url", "image_url": image_url})
-            else:
-                # base64 data URI
-                content.append({"type": "image_url", "image_url": image_url})
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": image_url},
+                "role": "first_frame",
+            })
         content.append({"type": "text", "text": args.prompt})
+
+        # For i2v, use adaptive ratio to match input image
+        ratio = "adaptive" if (mode == "i2v" and image_url) else args.ratio
 
         body: dict = {
             "model": model,
             "content": content,
             "duration": args.duration,
             "resolution": args.resolution.lower().rstrip("p") + "p",
-            "ratio": args.ratio,
+            "ratio": ratio,
             "watermark": False,
         }
 
         if args.seed is not None:
             body["seed"] = args.seed
+
+        # Seedance 2.0 advanced features
+        if args.audio:
+            body["generate_audio"] = True
+        if getattr(args, "camera_motion", None):
+            body["camera_motion"] = args.camera_motion
 
         return body
 

@@ -64,6 +64,18 @@ def detect_mode(args) -> str:
     return "t2v"
 
 
+def _detect_provider_from_task(task_id: str):
+    """Detect provider from task ID format. Falls back to Bailian."""
+    # Ark task IDs: cgt-YYYYMMDDhhmmss-xxxxx
+    if task_id.startswith("cgt-"):
+        return get_provider("jimeng")
+    # MiniMax task IDs: pure numeric (e.g. "417527150997914")
+    if task_id.isdigit():
+        return get_provider("minimax")
+    # Default: Bailian
+    return get_provider("bailian")
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -98,11 +110,13 @@ def main():
     parser.add_argument("--no-prompt-extend", action="store_true",
                         help="disable automatic prompt rewriting (Wan only)")
     parser.add_argument("--audio", action="store_true",
-                        help="enable audio on PixVerse/Kling/Vidu (their default is off)")
+                        help="enable audio on PixVerse/Kling/Vidu/Jimeng (default off for third-party)")
     parser.add_argument("--no-audio", action="store_true",
                         help="silent output on Wan models that default to audio")
+    parser.add_argument("--camera-motion",
+                        help="camera motion description (Jimeng Seedance 2.0; e.g. 'slow push-in, orbit right')")
     parser.add_argument("--seed", type=int, help="random seed for reproducibility")
-    parser.add_argument("--task-id", help="resume polling an existing task (Bailian only)")
+    parser.add_argument("--task-id", help="resume polling an existing task (auto-detect provider from ID)")
     parser.add_argument("--list-models", action="store_true", help="list all models and exit")
     args = parser.parse_args()
 
@@ -116,9 +130,13 @@ def main():
             print()
         return
 
-    # --task-id resume (always Bailian)
+    # --task-id resume
     if args.task_id:
-        provider = get_provider("bailian")
+        if args.provider:
+            provider = get_provider(args.provider)
+        else:
+            provider = _detect_provider_from_task(args.task_id)
+        print(f"Resuming task {args.task_id} via provider: {provider.name}")
         video_url = provider.poll(args.task_id)
         if not video_url:
             print("Error: task succeeded but no video_url in response", file=sys.stderr)
