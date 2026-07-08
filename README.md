@@ -123,11 +123,15 @@ python scripts/generate_video.py "海浪拍打礁石" ocean.mp4 --provider minim
 |--------|--------|-------|----------|
 | Jimeng Seedance | `doubao-seedance-2-0-260128` (default), `doubao-seedance-2-0-fast-260128`, `doubao-seedance-1-5-pro-251215`, `doubao-seedance-1-0-pro` | t2v, i2v | up to 15s |
 
+> ✅ Tested: t2v 5s, ~4 min, 5.6 MB MP4
+
 ### MiniMax (海螺 AI)
 
 | Family | Models | Modes | Duration |
 |--------|--------|-------|----------|
 | MiniMax | `video-01` (t2v/i2v default) | t2v, i2v | 6s |
+
+> ✅ Tested: t2v 6s, ~3 min, 2.9 MB MP4
 
 Run `python scripts/generate_video.py --list-models` for the current list. Third-party Bailian families are Beijing region (`cn`) only.
 

@@ -123,11 +123,15 @@ python scripts/generate_video.py "镜头缓缓推近" out.mp4 --image photo.png 
 |------|------|------|------|
 | 即梦 Seedance | `doubao-seedance-2-0-260128`(默认)、`doubao-seedance-2-0-fast-260128`、`doubao-seedance-1-5-pro-251215`、`doubao-seedance-1-0-pro` | 文生、图生 | 最长 15s |
 
+> ✅ 已实测：文生视频 5s，约 4 分钟，5.6 MB MP4
+
 ### MiniMax 海螺 AI
 
 | 家族 | 模型 | 模式 | 时长 |
 |------|------|------|------|
 | MiniMax | `video-01`(文生/图生视频默认) | 文生、图生 | 6s |
+
+> ✅ 已实测：文生视频 6s，约 3 分钟，2.9 MB MP4
 
 运行 `python scripts/generate_video.py --list-models` 查看当前列表。百炼第三方模型仅限北京(`cn`)地域。
 
