@@ -32,6 +32,7 @@ Local images: Wan/HappyHorse accept base64 data URIs directly; PixVerse/Kling/Vi
 - User asks to 生成视频 / 文生视频 / 图生视频 / 首尾帧 / 参考生视频
 - User names a Chinese video model: 万相/Wan, 爱诗/PixVerse, 可灵/Kling, Vidu, HappyHorse, 即梦/Jimeng, 海螺/MiniMax, 混元/Hunyuan
 - User needs B-roll, animated stills, character-consistent clips, or frame transitions
+- User asks about model pricing, features, or wants to compare models → open `docs/models.html`
 
 ## Workflow
 
@@ -147,6 +148,18 @@ One API key (`DASHSCOPE_API_KEY`) covers 5 model families. Third-party models (P
 | Portrait animation (experimental) | `yt-video-humanactor` | Hunyuan |
 
 Run `python scripts/generate_video.py --list-models` for the full model catalog.
+
+### Model Comparison Page
+
+When the user wants to compare models, browse pricing, filter by features, or pick a model:
+
+**Open `docs/models.html` in the browser.** It's a self-contained static page — no server needed. Use `open` (macOS) or `xdg-open` (Linux):
+
+```bash
+open docs/models.html
+```
+
+The page supports filtering by provider, mode (文生/图生/首尾帧/参考生), and features (audio/camera/multi-shot), with pricing and capability comparison across all 22 models.
 
 ## Usage
 
