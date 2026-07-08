@@ -17,6 +17,7 @@ Usage:
 """
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -75,6 +76,34 @@ def detect_mode(args) -> str:
     if args.image:
         return "i2v"
     return "t2v"
+
+
+# --- Idempotency key cache (P2) ---------------------------------------
+
+_IDEMPOTENCY_DIR = Path.home() / ".cache" / "videogen"
+
+
+def _idempotency_path(key: str) -> Path:
+    """Return cache path for an idempotency key."""
+    safe = hashlib.sha256(key.encode()).hexdigest()[:16]
+    return _IDEMPOTENCY_DIR / f"{safe}.json"
+
+
+def _check_idempotency(key: str) -> dict | None:
+    """Check if this idempotency key was already used. Returns cached record or None."""
+    p = _idempotency_path(key)
+    if p.exists():
+        try:
+            return json.loads(p.read_text())
+        except (json.JSONDecodeError, ValueError):
+            return None
+    return None
+
+
+def _store_idempotency(key: str, record: dict) -> None:
+    """Store a task record for an idempotency key."""
+    _IDEMPOTENCY_DIR.mkdir(parents=True, exist_ok=True)
+    _idempotency_path(key).write_text(json.dumps(record, default=str))
 
 
 def _detect_provider_from_task(task_id: str):
@@ -205,6 +234,29 @@ def _print_msg(fmt: str, msg: str, **kwargs) -> None:
 # ---------------------------------------------------------------------------
 
 def _run(args, available, fmt: str, *, parent_parser=None):
+    # --- --help-providers -----------------------------------------------
+    if getattr(args, 'help_providers', False):
+        data = _load_models_json()
+        for p in data.get("providers", []):
+            if p["id"] not in available:
+                continue
+            pk = p["id"]
+            print(f"=== {p['name']} ({pk}) ===")
+            print(f"  {p['full_name']}")
+            print(f"  {p['description']}")
+            print(f"  API key: {p['api_key_env']} → {p['api_key_url']}")
+            print(f"  Region: {p['region']}")
+            if p.get("region_note"):
+                print(f"  Note: {p['region_note']}")
+            print(f"  Models: {len(p.get('models', []))}")
+            for m in p.get("models", []):
+                star = " ⭐" if m.get("default") else ""
+                exp = " ⚠️" if m.get("experimental") else ""
+                modes = ", ".join(m.get("modes_en", m.get("modes", [])))
+                print(f"    {m['name']}{star}{exp} [{modes}] {m.get('price','')}")
+            print()
+        return
+
     # --- --list-models --------------------------------------------------
     if args.list_models:
         names = [args.provider] if args.provider else available
@@ -346,8 +398,21 @@ def _run(args, available, fmt: str, *, parent_parser=None):
     emit_progress("submit", provider=provider.name, model=model, mode=mode)
 
     start = time.time()
-    task_id = provider.submit(body, oss_used=oss_used)
-    _print_msg(fmt, f"Task submitted: {task_id}", file=sys.stderr)
+
+    # Idempotency: check for cached task before submitting
+    idem_key = getattr(args, 'idempotency_key', None)
+    cached = _check_idempotency(idem_key) if idem_key else None
+    if cached and cached.get("provider") == provider.name:
+        task_id = cached["task_id"]
+        _print_msg(fmt, f"Idempotency hit: reusing task {task_id}", file=sys.stderr)
+        emit_progress("idempotency_hit", task_id=task_id, key=idem_key)
+    else:
+        task_id = provider.submit(body, oss_used=oss_used)
+        _print_msg(fmt, f"Task submitted: {task_id}", file=sys.stderr)
+        if idem_key:
+            _store_idempotency(idem_key, {
+                "task_id": task_id, "provider": provider.name,
+                "model": model, "mode": mode, "created": time.time()})
 
     emit_progress("submitted", task_id=task_id, provider=provider.name)
     video_url = provider.poll(task_id)
@@ -417,12 +482,17 @@ def main():
     parser.add_argument("--camera-motion",
                         help="camera motion description (Jimeng Seedance 2.0)")
     parser.add_argument("--seed", type=int, help="random seed for reproducibility")
-    parser.add_argument("--task-id", help="resume polling an existing task")
-    parser.add_argument("--list-models", action="store_true", help="list all models and exit")
+    parser.add_argument("--idempotency-key",
+                        help="[WRITE] client-supplied key; retries reuse cached task")
+    parser.add_argument("--task-id", help="[WRITE] resume polling an existing task")
     parser.add_argument("--dry-run", action="store_true",
-                        help="preview request body + cost estimate without submitting")
+                        help="[READ] preview request body + cost estimate without submitting")
     parser.add_argument("--format", choices=["json", "table"], default=None,
                         help="output format (default: table in TTY, json otherwise)")
+    parser.add_argument("--list-models", action="store_true",
+                        help="[READ] list all models and exit")
+    parser.add_argument("--help-providers", action="store_true",
+                        help="[READ] show provider details and exit")
     args = parser.parse_args()
     fmt = resolve_format(args.format)
 
