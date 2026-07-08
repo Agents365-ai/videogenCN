@@ -147,10 +147,42 @@ python scripts/generate_video.py "镜头缓缓推近" out.mp4 --image photo.png 
 
 > **费用提示**:视频生成按输出秒数计费(视模型和分辨率约 $0.04–0.14/秒)。结果 URL 24 小时后过期 —— 脚本会立即下载。
 
+## 支持
+
+如果这个项目对你有帮助，欢迎支持作者：
+
+<table>
+  <tr>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/Agents365-ai/images_payment/main/qrcode/wechat-pay.png" width="180" alt="WeChat Pay">
+      <br>
+      <b>微信赞赏</b>
+    </td>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/Agents365-ai/images_payment/main/qrcode/alipay.png" width="180" alt="Alipay">
+      <br>
+      <b>支付宝</b>
+    </td>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/Agents365-ai/images_payment/main/qrcode/buymeacoffee.png" width="180" alt="Buy Me a Coffee">
+      <br>
+      <b>Buy Me a Coffee</b>
+    </td>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/Agents365-ai/images_payment/main/awarding/award.gif" width="180" alt="Give a Reward">
+      <br>
+      <b>打赏</b>
+    </td>
+  </tr>
+</table>
+
 ## 许可证
 
 MIT
 
 ## 作者
 
-**Agents365-ai** — [GitHub](https://github.com/Agents365-ai)
+**Agents365-ai**
+
+- Bilibili: https://space.bilibili.com/441831884
+- GitHub: https://github.com/Agents365-ai
