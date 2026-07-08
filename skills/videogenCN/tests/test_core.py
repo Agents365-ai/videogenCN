@@ -20,7 +20,7 @@ from providers.base import (
     validate_media_file, InputError,
     ConfigError, APIError, TaskFailedError, TaskTimeoutError, VideoGenError,
 )
-from generate_video import detect_mode, parse_ref
+from generate_video import detect_mode, parse_ref, download_video, _run
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +140,49 @@ class TestModeDetection:
         class A:
             ref = ["x=img.png"]; image = None; last_frame = None
         assert detect_mode(A()) == "r2v"
+
+
+# ---------------------------------------------------------------------------
+# CLI validation / download helpers
+# ---------------------------------------------------------------------------
+
+class TestCliHelpers:
+    def test_run_missing_prompt_raises_input_error(self):
+        import pytest
+
+        class A:
+            list_models = False
+            task_id = None
+            prompt = None
+            last_frame = None
+
+        with pytest.raises(InputError, match="prompt is required"):
+            _run(A(), ["bailian"])
+
+    def test_run_last_frame_without_image_raises_input_error(self):
+        import pytest
+
+        class A:
+            list_models = False
+            task_id = None
+            prompt = "animate"
+            last_frame = "end.png"
+            image = None
+
+        with pytest.raises(InputError, match="--last-frame requires --image"):
+            _run(A(), ["bailian"])
+
+    def test_download_video_non_200_raises_api_error(self, tmp_path):
+        import pytest
+
+        mock_rsp = MagicMock()
+        mock_rsp.status_code = 403
+        mock_rsp.text = "expired"
+        mock_rsp.content = b""
+
+        with patch("generate_video.safe_request", return_value=mock_rsp):
+            with pytest.raises(APIError, match="video download failed"):
+                download_video("http://x.com/expired.mp4", tmp_path / "out.mp4")
 
 
 # ---------------------------------------------------------------------------
@@ -445,3 +488,20 @@ class TestMediaValidation:
         img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
         result = validate_media_file(str(img))
         assert result.name == "photo.png"
+
+    def test_bailian_upload_policy_missing_data_raises_api_error(self, tmp_path, monkeypatch):
+        import pytest
+
+        img = tmp_path / "photo.png"
+        img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
+        monkeypatch.setenv("DASHSCOPE_API_KEY", "test-key")
+
+        mock_rsp = MagicMock()
+        mock_rsp.status_code = 401
+        mock_rsp.text = '{"code":"InvalidApiKey","message":"bad key"}'
+        mock_rsp.json.return_value = {"code": "InvalidApiKey", "message": "bad key"}
+
+        p = get_provider("bailian")
+        with patch("providers.bailian.safe_request", return_value=mock_rsp):
+            with pytest.raises(APIError, match="Bailian upload policy failed"):
+                p._upload_file("pixverse/pixverse-c1-it2v", str(img))

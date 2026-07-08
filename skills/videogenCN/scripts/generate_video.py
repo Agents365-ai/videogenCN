@@ -32,6 +32,7 @@ except ImportError:
 from providers import get_provider, detect_provider, list_providers, register_providers
 from providers.base import (GenerationRequest, VideoGenError, ConfigError,
                             InputError, APIError, TaskFailedError, TaskTimeoutError)
+from providers.base import safe_request
 
 
 # ---------------------------------------------------------------------------
@@ -40,8 +41,10 @@ from providers.base import (GenerationRequest, VideoGenError, ConfigError,
 
 def download_video(url: str, output_path: Path) -> int:
     """Download a video from URL, write to output_path, return byte count."""
-    rsp = requests.get(url, timeout=300)
-    rsp.raise_for_status()
+    rsp = safe_request("GET", url, timeout=300, label="Video download")
+    if rsp.status_code != 200:
+        raise APIError(
+            f"video download failed (HTTP {rsp.status_code}): {rsp.text[:300]}")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(rsp.content)
     return len(rsp.content)
@@ -185,13 +188,9 @@ def _run(args, available):
 
     # Normal generation flow
     if not args.prompt:
-        print("Error: prompt is required (or use --task-id / --list-models)",
-              file=sys.stderr)
-        sys.exit(1)
+        raise InputError("prompt is required (or use --task-id / --list-models)")
     if args.last_frame and not args.image:
-        print("Error: --last-frame requires --image (the first frame)",
-              file=sys.stderr)
-        sys.exit(1)
+        raise InputError("--last-frame requires --image (the first frame)")
 
     # Provider selection
     if args.provider:
@@ -202,9 +201,9 @@ def _run(args, available):
     # Mode detection
     mode = detect_mode(args)
     if mode not in provider.supported_modes:
-        print(f"Error: provider '{provider.name}' does not support mode '{mode}'. "
-              f"Supported: {', '.join(provider.supported_modes)}", file=sys.stderr)
-        sys.exit(1)
+        raise InputError(
+            f"provider '{provider.name}' does not support mode '{mode}'. "
+            f"Supported: {', '.join(provider.supported_modes)}")
 
     # Model selection
     model_env = provider.model_env_var

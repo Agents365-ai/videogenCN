@@ -123,7 +123,16 @@ class BailianProvider(VideoProvider):
             params={"action": "getPolicy", "model": model},
             headers={"Authorization": f"Bearer {self.api_key}"},
             label="Bailian upload policy")
-        data = safe_json(rsp, "Bailian upload policy")["data"]
+        if rsp.status_code != 200:
+            raise APIError(
+                f"Bailian upload policy failed "
+                f"(HTTP {rsp.status_code}): {rsp.text[:300]}")
+        payload = safe_json(rsp, "Bailian upload policy")
+        data = payload.get("data")
+        if not isinstance(data, dict):
+            raise APIError(
+                f"Bailian upload policy missing data: "
+                f"{payload.get('code')} {payload.get('message')}")
         key = f"{data['upload_dir']}/{Path(path).name}"
         form = {
             "OSSAccessKeyId": data["oss_access_key_id"],
@@ -135,9 +144,13 @@ class BailianProvider(VideoProvider):
             "success_action_status": "200",
         }
         with open(path, "rb") as f:
-            safe_request("POST", data["upload_host"], data=form,
-                        files={"file": (Path(path).name, f)},
-                        timeout=120, label="Bailian OSS upload")
+            upload_rsp = safe_request("POST", data["upload_host"], data=form,
+                                      files={"file": (Path(path).name, f)},
+                                      timeout=120, label="Bailian OSS upload")
+        if upload_rsp.status_code != 200:
+            raise APIError(
+                f"Bailian OSS upload failed "
+                f"(HTTP {upload_rsp.status_code}): {upload_rsp.text[:300]}")
         print(f"Uploaded {path} -> oss (48h temporary URL)")
         return f"oss://{key}"
 
