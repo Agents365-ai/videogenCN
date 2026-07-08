@@ -27,6 +27,10 @@
 - **音频控制**:第三方模型用 `--audio` 开启，万相用 `--no-audio` 关闭
 - **可续接**:长任务会打印 task id，用 `--task-id` 恢复轮询
 
+## 流程图
+
+![videogenCN 流程图](assets/workflow.png)
+
 ## 安装技能
 
 **365-Skills 市场（推荐）：**

@@ -27,6 +27,10 @@ A Claude Code / OpenClaw skill for generating video clips with Chinese video mod
 - **Audio control**: `--audio` (third-party) / `--no-audio` (Wan)
 - **Resumable**: long tasks print a task id; `--task-id` resumes polling
 
+## Pipeline
+
+![videogenCN Pipeline](assets/workflow.png)
+
 ## Install the Skill
 
 **365-Skills Marketplace (recommended):**
