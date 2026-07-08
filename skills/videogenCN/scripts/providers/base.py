@@ -1,19 +1,88 @@
 """Base classes, exceptions, and utilities for video generation providers."""
 
 import base64
+import json
 import mimetypes
 import os
 import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 
 try:
     import requests
 except ImportError:
     print("Error: 'requests' not installed. Run: pip install requests", file=sys.stderr)
     sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Output envelope helpers (agent-native)
+# ---------------------------------------------------------------------------
+
+SCHEMA_VERSION = "2.0.0"
+
+_stdout_is_tty: bool | None = None
+
+
+def stdout_is_tty() -> bool:
+    """Detect whether stdout is a terminal. Cached after first call."""
+    global _stdout_is_tty
+    if _stdout_is_tty is None:
+        _stdout_is_tty = sys.stdout.isatty()
+    return _stdout_is_tty
+
+
+def resolve_format(flag: str | None) -> str:
+    """Resolve output format: explicit flag > TTY detection > table default."""
+    if flag in ("json", "table"):
+        return flag
+    return "table" if stdout_is_tty() else "json"
+
+
+def emit_json(obj: dict) -> None:
+    """Write a JSON object to stdout (one line)."""
+    json.dump(obj, sys.stdout, ensure_ascii=False, default=str)
+    sys.stdout.write("\n")
+    sys.stdout.flush()
+
+
+def emit_success(data: Any = None, meta: dict | None = None) -> None:
+    """Emit a success envelope to stdout."""
+    env: dict = {"ok": True}
+    if data is not None:
+        env["data"] = data
+    m: dict = {"schema_version": SCHEMA_VERSION}
+    if meta:
+        m.update(meta)
+    env["meta"] = m
+    emit_json(env)
+
+
+def emit_error(code: str, message: str, retryable: bool = False,
+               data: Any = None, meta: dict | None = None) -> None:
+    """Emit an error envelope to stdout (structured, machine-readable)."""
+    env: dict = {
+        "ok": False,
+        "error": {"code": code, "message": message, "retryable": retryable},
+    }
+    if data is not None:
+        env["data"] = data
+    m: dict = {"schema_version": SCHEMA_VERSION}
+    if meta:
+        m.update(meta)
+    env["meta"] = m
+    emit_json(env)
+
+
+def emit_progress(event: str, **kwargs) -> None:
+    """Emit a JSON progress line to stderr (for agent liveness monitoring)."""
+    obj = {"event": event}
+    obj.update(kwargs)
+    json.dump(obj, sys.stderr, ensure_ascii=False, default=str)
+    sys.stderr.write("\n")
+    sys.stderr.flush()
 
 
 # ---------------------------------------------------------------------------
@@ -289,7 +358,8 @@ class VideoProvider:
                     f"task {task_id} still {status} after "
                     f"{self.POLL_DEADLINE // 60} minutes. "
                     f"Resume later with: --task-id {task_id}")
-            print(f"Status: {status}, waiting {self.POLL_INTERVAL}s...")
+            emit_progress("poll", status=status,
+                         wait_s=self.POLL_INTERVAL, task_id=task_id)
             time.sleep(self.POLL_INTERVAL)
 
     def _poll_request(self, task_id: str):

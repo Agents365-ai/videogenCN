@@ -184,6 +184,17 @@ python scripts/generate_video.py "城市日落延时摄影" sunset.mp4 --provide
 python scripts/generate_video.py "海浪拍打礁石" ocean.mp4 --provider minimax --duration 6
 python scripts/generate_video.py "金黄色的麦田在秋风中起伏" field.mp4 --provider hunyuan --duration 5
 
+# Dry-run: preview request + cost estimate without submitting
+python scripts/generate_video.py "一只柴犬在樱花树下奔跑" --dry-run
+
+# Schema introspection (for agents)
+python scripts/generate_video.py schema providers   # list all providers
+python scripts/generate_video.py schema bailian     # list bailian models with capabilities
+
+# JSON output (auto-detected when stdout is not a TTY; force with --format)
+python scripts/generate_video.py --list-models --format json
+python scripts/generate_video.py "海边的日落" out.mp4 --format json --provider jimeng
+
 # Resume a task
 python scripts/generate_video.py --task-id <task-id> out.mp4
 
@@ -212,7 +223,10 @@ python scripts/generate_video.py --list-models
 | `--camera-motion` | camera motion (Jimeng Seedance 2.0 only) | — |
 | `--seed` | reproducibility | random |
 | `--task-id` | resume polling an existing task | — |
+| `--dry-run` | preview request body + cost estimate, no submit | — |
+| `--format` | `json` or `table` (default: table in TTY, json otherwise) | auto |
 | `--list-models` | list models and exit | — |
+| `schema <resource>` | introspection: `providers` or a provider id | — |
 
 ## Requirements
 

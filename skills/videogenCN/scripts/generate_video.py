@@ -12,12 +12,15 @@ Usage:
   python generate_video.py "prompt" out.mp4 --image a.png --last-frame b.png  # kf2v
   python generate_video.py "@girl dancing" out.mp4 --ref girl=girl.png     # r2v
   python generate_video.py --task-id <id> --provider <name> out.mp4        # resume
+  python generate_video.py schema <resource>                               # introspection
   python generate_video.py --list-models
 """
 
 import argparse
+import json
 import os
 import sys
+import time
 from pathlib import Path
 
 # Allow imports from the providers package next to this script
@@ -30,9 +33,13 @@ except ImportError:
     sys.exit(1)
 
 from providers import get_provider, detect_provider, list_providers, register_providers
-from providers.base import (GenerationRequest, VideoGenError, ConfigError,
-                            InputError, APIError, TaskFailedError, TaskTimeoutError)
-from providers.base import safe_request
+from providers.base import (
+    GenerationRequest, VideoGenError, ConfigError, InputError, APIError,
+    TaskFailedError, TaskTimeoutError,
+    safe_request, emit_success, emit_error, emit_progress,
+    stdout_is_tty, resolve_format, SCHEMA_VERSION,
+)
+from providers.base import safe_request as _safe_request
 
 
 # ---------------------------------------------------------------------------
@@ -41,7 +48,7 @@ from providers.base import safe_request
 
 def download_video(url: str, output_path: Path) -> int:
     """Download a video from URL, write to output_path, return byte count."""
-    rsp = safe_request("GET", url, timeout=300, label="Video download")
+    rsp = _safe_request("GET", url, timeout=300, label="Video download")
     if rsp.status_code != 200:
         raise APIError(
             f"video download failed (HTTP {rsp.status_code}): {rsp.text[:300]}")
@@ -51,11 +58,7 @@ def download_video(url: str, output_path: Path) -> int:
 
 
 def parse_ref(ref: str) -> tuple[str | None, str]:
-    """Parse --ref 'name=path_or_url' or plain 'path_or_url' -> (name, value).
-
-    Only treats the value as a named reference when 'name' matches an identifier
-    pattern and the value does NOT look like a real filesystem path.
-    """
+    """Parse --ref 'name=path_or_url' or plain 'path_or_url' -> (name, value)."""
     if "=" in ref:
         name, value = ref.split("=", 1)
         if name.isidentifier() and not os.path.exists(ref):
@@ -75,10 +78,7 @@ def detect_mode(args) -> str:
 
 
 def _detect_provider_from_task(task_id: str):
-    """Detect provider from task ID format.
-
-    Returns (provider, is_confident).
-    """
+    """Detect provider from task ID format. Returns (provider, is_confident)."""
     if task_id.startswith("cgt-"):
         return get_provider("jimeng"), True
     if task_id.isdigit():
@@ -87,108 +87,173 @@ def _detect_provider_from_task(task_id: str):
 
 
 # ---------------------------------------------------------------------------
-# CLI
+# Schema introspection
 # ---------------------------------------------------------------------------
 
-def main():
-    register_providers()
-    available = list_providers()
-
-    parser = argparse.ArgumentParser(
-        description="Generate video via Chinese video models "
-                    "(Bailian Wan/PixVerse/Kling/Vidu/HappyHorse, Jimeng, MiniMax, Hunyuan)")
-    parser.add_argument("prompt", nargs="?", help="video description")
-    parser.add_argument("output", nargs="?", default="./generated-video.mp4",
-                        help="output MP4 path (default: ./generated-video.mp4)")
-    parser.add_argument("-m", "--model", help="model name (default: auto by mode)")
-    parser.add_argument("--provider", choices=available,
-                        help=f"provider backend (default: auto-detect; available: {', '.join(available)})")
-    parser.add_argument("-i", "--image", help="first-frame image (path or URL) -> i2v")
-    parser.add_argument("--last-frame", help="last-frame image (with --image) -> kf2v")
-    parser.add_argument("--ref", action="append", default=[],
-                        help="reference image 'name=path_or_url' (repeatable) -> r2v; "
-                             "mention as '@name ' in the prompt")
-    parser.add_argument("-d", "--duration", type=int, default=5,
-                        help="duration in seconds (default: 5)")
-    parser.add_argument("-r", "--resolution", default="1080P",
-                        choices=["360P", "480P", "540P", "720P", "1080P"],
-                        help="output resolution (default: 1080P)")
-    parser.add_argument("--ratio", default="16:9",
-                        choices=["16:9", "9:16", "1:1", "3:4", "4:3", "21:9"],
-                        help="aspect ratio (default: 16:9)")
-    parser.add_argument("-s", "--size", help="exact size 'W*H' for size-based models")
-    parser.add_argument("-n", "--negative", help="negative prompt (Wan only)")
-    parser.add_argument("--no-prompt-extend", action="store_true",
-                        help="disable automatic prompt rewriting (Wan only)")
-    parser.add_argument("--no-prompt-optimizer", action="store_true",
-                        help="disable built-in prompt optimizer (MiniMax only)")
-    parser.add_argument("--audio", action="store_true",
-                        help="enable audio on PixVerse/Kling/Vidu/Jimeng (default off)")
-    parser.add_argument("--no-audio", action="store_true",
-                        help="silent output on Wan models that default to audio")
-    parser.add_argument("--camera-motion",
-                        help="camera motion description (Jimeng Seedance 2.0)")
-    parser.add_argument("--seed", type=int, help="random seed for reproducibility")
-    parser.add_argument("--task-id", help="resume polling an existing task")
-    parser.add_argument("--list-models", action="store_true", help="list all models and exit")
-    args = parser.parse_args()
-
-    try:
-        _run(args, available)
-    except ConfigError as e:
-        print(f"Configuration error: {e}", file=sys.stderr)
-        sys.exit(e.exit_code)
-    except InputError as e:
-        print(f"Input error: {e}", file=sys.stderr)
-        sys.exit(e.exit_code)
-    except APIError as e:
-        print(f"API error: {e}", file=sys.stderr)
-        sys.exit(e.exit_code)
-    except TaskFailedError as e:
-        print(f"Task failed: {e}", file=sys.stderr)
-        sys.exit(e.exit_code)
-    except TaskTimeoutError as e:
-        print(f"Timeout: {e}", file=sys.stderr)
-        sys.exit(e.exit_code)
-    except VideoGenError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(e.exit_code)
+def _load_models_json() -> dict:
+    """Load models.json from the docs directory (repo root or skill root)."""
+    script_dir = Path(__file__).resolve().parent  # .../skills/videogenCN/scripts
+    skill_dir = script_dir.parent                  # .../skills/videogenCN
+    repo_dir = skill_dir.parent.parent             # repo root
+    candidates = [
+        repo_dir / "docs" / "models.json",
+        skill_dir / "docs" / "models.json",
+    ]
+    for p in candidates:
+        if p.exists():
+            return json.loads(p.read_text())
+    return {}
 
 
-def _run(args, available):
-    # --list-models
-    if args.list_models:
-        names = [args.provider] if args.provider else available
-        for name in names:
-            p = get_provider(name)
-            print(f"=== {name} ===")
-            print(p.list_models_text())
-            print()
+def cmd_schema(args, available):
+    """schema <resource.action> — introspection endpoint for agents."""
+    data = _load_models_json()
+    target = args.schema_target
+
+    # schema providers — list all providers
+    if target == "providers" or target == "":
+        providers = []
+        for p in data.get("providers", []):
+            providers.append({
+                "id": p["id"],
+                "name": p["name"],
+                "full_name": p["full_name"],
+                "api_key_env": p["api_key_env"],
+                "model_count": len(p.get("models", [])),
+            })
+        emit_success(providers)
         return
 
-    # --task-id resume
+    # schema <provider> — list models for a provider
+    for p in data.get("providers", []):
+        if target == p["id"]:
+            models = []
+            for m in p["models"]:
+                models.append({
+                    "name": m["name"],
+                    "family": m["family"],
+                    "modes": m["modes_en"],
+                    "resolution": m["resolution"],
+                    "duration": m["duration"],
+                    "audio": m.get("audio", False),
+                    "camera_control": m.get("camera_control", False),
+                    "multi_shot": m.get("multi_shot", False),
+                    "default": m.get("default", False),
+                    "price": m.get("price", ""),
+                    "use_case": m.get("use_case", ""),
+                    "experimental": m.get("experimental", False),
+                })
+            emit_success(models, {"provider": p["id"], "provider_name": p["name"]})
+            return
+
+    # Fallback: unknown target
+    emit_error("schema_not_found",
+               f"Unknown resource '{target}'. Try 'providers' or a provider id: "
+               + ", ".join(p["id"] for p in data.get("providers", [])),
+               retryable=False)
+
+
+# ---------------------------------------------------------------------------
+# Cost estimation (for --dry-run)
+# ---------------------------------------------------------------------------
+
+def _estimate_cost(req: GenerationRequest, provider_name: str) -> dict:
+    """Estimate cost from models.json data. Returns {min, max, currency}."""
+    data = _load_models_json()
+    for p in data.get("providers", []):
+        if p["id"] == provider_name:
+            for m in p["models"]:
+                if m["name"] == req.model or m.get("full_name") == req.model:
+                    price = m.get("price", "")
+                    # Parse "$0.04–0.08/s" format
+                    if "–" in price:
+                        parts = price.replace("$", "").replace("/s", "").split("–")
+                        try:
+                            lo, hi = float(parts[0]), float(parts[1])
+                            return {
+                                "min": round(lo * req.duration, 3),
+                                "max": round(hi * req.duration, 3),
+                                "currency": "USD",
+                            }
+                        except (ValueError, IndexError):
+                            pass
+                    elif price and price != "—":
+                        try:
+                            v = float(price.replace("$", "").replace("/s", ""))
+                            return {"min": round(v * req.duration, 3),
+                                    "max": round(v * req.duration, 3), "currency": "USD"}
+                        except ValueError:
+                            pass
+                    break
+            break
+    return {"min": None, "max": None, "currency": "USD", "note": "price data unavailable"}
+
+
+# ---------------------------------------------------------------------------
+# Output dispatcher
+# ---------------------------------------------------------------------------
+
+def _print_msg(fmt: str, msg: str, **kwargs) -> None:
+    """Print a message: table mode → stderr; json mode → skip (use envelope)."""
+    if fmt == "json":
+        return  # JSON mode suppresses human prose; use emit_progress for status
+    print(msg, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Core logic
+# ---------------------------------------------------------------------------
+
+def _run(args, available, fmt: str, *, parent_parser=None):
+    # --- --list-models --------------------------------------------------
+    if args.list_models:
+        names = [args.provider] if args.provider else available
+        models_data = {}
+        for name in names:
+            p = get_provider(name)
+            models_data[name] = p.list_models_text()
+        if fmt == "json":
+            emit_success(models_data)
+        else:
+            for name, text in models_data.items():
+                print(f"=== {name} ===")
+                print(text)
+                print()
+        return
+
+    # --- --task-id resume -----------------------------------------------
     if args.task_id:
         if args.provider:
             provider = get_provider(args.provider)
         else:
             provider, confident = _detect_provider_from_task(args.task_id)
             if not confident:
-                print(f"Warning: cannot auto-detect provider from task ID "
-                      f"'{args.task_id}'.", file=sys.stderr)
-                print(f"Defaulting to '{provider.name}'. "
-                      f"If wrong, re-run with --provider.", file=sys.stderr)
-                print(f"Available: {', '.join(available)}", file=sys.stderr)
-        print(f"Resuming task {args.task_id} via provider: {provider.name}")
+                msg = (f"cannot auto-detect provider from task ID '{args.task_id}'; "
+                       f"defaulting to '{provider.name}'")
+                _print_msg(fmt, f"Warning: {msg}", file=sys.stderr)
+        _print_msg(fmt, f"Resuming task {args.task_id} via provider: {provider.name}",
+                   file=sys.stderr)
+        emit_progress("resume", task_id=args.task_id, provider=provider.name)
+        start = time.time()
         video_url = provider.poll(args.task_id)
         output_path = Path(args.output)
-        print("Downloading video (result URLs expire after 24h)...")
+        _print_msg(fmt, "Downloading video (result URLs expire after 24h)...", file=sys.stderr)
         size = download_video(video_url, output_path)
-        print(f"Saved: {output_path} ({size / 1024 / 1024:.1f} MB)")
+        elapsed = round(time.time() - start, 1)
+        _print_msg(fmt, f"Saved: {output_path} ({size / 1024 / 1024:.1f} MB)", file=sys.stderr)
+        emit_success({
+            "output_path": str(output_path),
+            "size_bytes": size,
+            "size_mb": round(size / 1024 / 1024, 1),
+        }, {"provider": provider.name, "task_id": args.task_id, "elapsed_s": elapsed})
         return
 
-    # Normal generation flow
+    # --- Normal generation ----------------------------------------------
     if not args.prompt:
-        raise InputError("prompt is required (or use --task-id / --list-models)")
+        if parent_parser:
+            parent_parser.error("prompt is required (or use --task-id / --list-models / schema)")
+        else:
+            raise InputError("prompt is required (or use --task-id / --list-models / schema)")
     if args.last_frame and not args.image:
         raise InputError("--last-frame requires --image (the first frame)")
 
@@ -231,7 +296,35 @@ def _run(args, available):
     )
     provider.validate_params(req)
 
-    # Resolve media
+    # --- --dry-run ------------------------------------------------------
+    if args.dry_run:
+        # Resolve media (for preview only — skip actual upload)
+        image_url = last_url = None
+        refs_preview = []
+        if args.image:
+            image_url = args.image if args.image.startswith(("http", "data:")) else f"<local:{args.image}>"
+        if args.last_frame:
+            last_url = args.last_frame if args.last_frame.startswith(("http", "data:")) else f"<local:{args.last_frame}>"
+        for ref in args.ref:
+            name, value = parse_ref(ref)
+            refs_preview.append([name, value])
+
+        body = provider.build_body(req, image_url, last_url,
+                                   [(n, v) for n, v in refs_preview])
+        cost = _estimate_cost(req, provider.name)
+        emit_success({
+            "dry_run": True,
+            "would_submit": {
+                "provider": provider.name,
+                "model": model,
+                "mode": mode,
+                "body": body,
+            },
+            "estimated_cost": cost,
+        }, {"provider": provider.name, "model": model, "mode": mode})
+        return
+
+    # Resolve media (real upload)
     oss_used = False
     image_url = last_url = None
     if args.image:
@@ -249,16 +342,128 @@ def _run(args, available):
 
     # Build body, submit, poll
     body = provider.build_body(req, image_url, last_url, refs)
-    print(f"Model: {model} (provider: {provider.name}, mode: {mode})")
-    task_id = provider.submit(body, oss_used=oss_used)
+    _print_msg(fmt, f"Model: {model} (provider: {provider.name}, mode: {mode})", file=sys.stderr)
+    emit_progress("submit", provider=provider.name, model=model, mode=mode)
 
-    print(f"Task submitted: {task_id}")
+    start = time.time()
+    task_id = provider.submit(body, oss_used=oss_used)
+    _print_msg(fmt, f"Task submitted: {task_id}", file=sys.stderr)
+
+    emit_progress("submitted", task_id=task_id, provider=provider.name)
     video_url = provider.poll(task_id)
 
-    print("Downloading video (result URLs expire after 24h)...")
+    _print_msg(fmt, "Downloading video (result URLs expire after 24h)...", file=sys.stderr)
+    emit_progress("download", task_id=task_id)
     output_path = Path(args.output)
     size = download_video(video_url, output_path)
-    print(f"Saved: {output_path} ({size / 1024 / 1024:.1f} MB)")
+    elapsed = round(time.time() - start, 1)
+    _print_msg(fmt, f"Saved: {output_path} ({size / 1024 / 1024:.1f} MB)", file=sys.stderr)
+
+    emit_success({
+        "output_path": str(output_path),
+        "size_bytes": size,
+        "size_mb": round(size / 1024 / 1024, 1),
+        "task_id": task_id,
+        "video_url": video_url,
+    }, {"provider": provider.name, "model": model, "mode": mode, "elapsed_s": elapsed})
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def main():
+    register_providers()
+    available = list_providers()
+
+    # Handle schema subcommand before full parsing
+    if len(sys.argv) > 1 and sys.argv[1] == "schema":
+        schema_target = sys.argv[2] if len(sys.argv) > 2 else "providers"
+        register_providers()
+        cmd_schema(argparse.Namespace(schema_target=schema_target), available)
+        return
+
+    parser = argparse.ArgumentParser(
+        description="Generate video via Chinese video models "
+                    "(Bailian Wan/PixVerse/Kling/Vidu/HappyHorse, Jimeng, MiniMax, Hunyuan)")
+    parser.add_argument("prompt", nargs="?", help="video description")
+    parser.add_argument("output", nargs="?", default="./generated-video.mp4",
+                        help="output MP4 path (default: ./generated-video.mp4)")
+    parser.add_argument("-m", "--model", help="model name (default: auto by mode)")
+    parser.add_argument("--provider", choices=available,
+                        help=f"provider backend (default: auto-detect; available: {', '.join(available)})")
+    parser.add_argument("-i", "--image", help="first-frame image (path or URL) -> i2v")
+    parser.add_argument("--last-frame", help="last-frame image (with --image) -> kf2v")
+    parser.add_argument("--ref", action="append", default=[],
+                        help="reference image 'name=path_or_url' (repeatable) -> r2v")
+    parser.add_argument("-d", "--duration", type=int, default=5,
+                        help="duration in seconds (default: 5)")
+    parser.add_argument("-r", "--resolution", default="1080P",
+                        choices=["360P", "480P", "540P", "720P", "1080P"],
+                        help="output resolution (default: 1080P)")
+    parser.add_argument("--ratio", default="16:9",
+                        choices=["16:9", "9:16", "1:1", "3:4", "4:3", "21:9"],
+                        help="aspect ratio (default: 16:9)")
+    parser.add_argument("-s", "--size", help="exact size 'W*H' for size-based models")
+    parser.add_argument("-n", "--negative", help="negative prompt (Wan only)")
+    parser.add_argument("--no-prompt-extend", action="store_true",
+                        help="disable automatic prompt rewriting (Wan only)")
+    parser.add_argument("--no-prompt-optimizer", action="store_true",
+                        help="disable built-in prompt optimizer (MiniMax only)")
+    parser.add_argument("--audio", action="store_true",
+                        help="enable audio on PixVerse/Kling/Vidu/Jimeng")
+    parser.add_argument("--no-audio", action="store_true",
+                        help="silent output on Wan models that default to audio")
+    parser.add_argument("--camera-motion",
+                        help="camera motion description (Jimeng Seedance 2.0)")
+    parser.add_argument("--seed", type=int, help="random seed for reproducibility")
+    parser.add_argument("--task-id", help="resume polling an existing task")
+    parser.add_argument("--list-models", action="store_true", help="list all models and exit")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="preview request body + cost estimate without submitting")
+    parser.add_argument("--format", choices=["json", "table"], default=None,
+                        help="output format (default: table in TTY, json otherwise)")
+    args = parser.parse_args()
+    fmt = resolve_format(args.format)
+
+    try:
+        _run(args, available, fmt, parent_parser=parser)
+    except ConfigError as e:
+        if fmt == "json":
+            emit_error("config_error", str(e), retryable=False)
+        else:
+            print(f"Configuration error: {e}", file=sys.stderr)
+        sys.exit(e.exit_code)
+    except InputError as e:
+        if fmt == "json":
+            emit_error("input_error", str(e), retryable=False)
+        else:
+            print(f"Input error: {e}", file=sys.stderr)
+        sys.exit(e.exit_code)
+    except APIError as e:
+        if fmt == "json":
+            emit_error("api_error", str(e), retryable=True)
+        else:
+            print(f"API error: {e}", file=sys.stderr)
+        sys.exit(e.exit_code)
+    except TaskFailedError as e:
+        if fmt == "json":
+            emit_error("task_failed", str(e), retryable=False)
+        else:
+            print(f"Task failed: {e}", file=sys.stderr)
+        sys.exit(e.exit_code)
+    except TaskTimeoutError as e:
+        if fmt == "json":
+            emit_error("task_timeout", str(e), retryable=True)
+        else:
+            print(f"Timeout: {e}", file=sys.stderr)
+        sys.exit(e.exit_code)
+    except VideoGenError as e:
+        if fmt == "json":
+            emit_error("error", str(e), retryable=False)
+        else:
+            print(f"Error: {e}", file=sys.stderr)
+        sys.exit(e.exit_code)
 
 
 if __name__ == "__main__":
