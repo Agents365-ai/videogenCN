@@ -1,4 +1,4 @@
-# Videogen-Wan 🎬
+# videogenCN 🎬
 
 [English](README.md)
 
@@ -6,7 +6,7 @@
 
 ## 为什么选择这个技能
 
-| | 原生 Claude Code | Videogen-Wan |
+| | 原生 Claude Code | videogenCN |
 |---|---|---|
 | 文生视频 | ❌ | ✅ 7 个模型家族，3 个平台 |
 | 图生视频 | ❌ | ✅ 让任意静态图片动起来 |
@@ -37,28 +37,28 @@
 
 ```bash
 # 在 Claude Code 中 — 自动安装和更新
-/plugin install videogen-wan@365-skills
+/plugin install videogenCN@365-skills
 ```
 
 **Claude Code（手动全局）：**
 
 ```bash
 git clone https://github.com/Agents365-ai/videogenCN.git /tmp/videogenCN
-ln -s /tmp/videogenCN/skills/videogen-wan ~/.claude/skills/videogen-wan
+ln -s /tmp/videogenCN/skills/videogenCN ~/.claude/skills/videogenCN
 ```
 
 **Claude Code（项目级）：**
 
 ```bash
 git clone https://github.com/Agents365-ai/videogenCN.git /tmp/videogenCN
-ln -s /tmp/videogenCN/skills/videogen-wan .claude/skills/videogen-wan
+ln -s /tmp/videogenCN/skills/videogenCN .claude/skills/videogenCN
 ```
 
 **OpenClaw：**
 
 ```bash
 git clone https://github.com/Agents365-ai/videogenCN.git /tmp/videogenCN
-ln -s /tmp/videogenCN/skills/videogen-wan ~/.openclaw/skills/videogen-wan
+ln -s /tmp/videogenCN/skills/videogenCN ~/.openclaw/skills/videogenCN
 ```
 
 ## 系统要求

@@ -1,4 +1,4 @@
-# Videogen-Wan 🎬
+# videogenCN 🎬
 
 [中文文档](README_CN.md)
 
@@ -6,7 +6,7 @@ A Claude Code / OpenClaw skill for generating video clips with Chinese video mod
 
 ## Why This Skill?
 
-| | Native Claude Code | Videogen-Wan |
+| | Native Claude Code | videogenCN |
 |---|---|---|
 | Text-to-video | ❌ | ✅ 7 model families across 3 providers |
 | Image-to-video | ❌ | ✅ Animate any still image |
@@ -37,28 +37,28 @@ A Claude Code / OpenClaw skill for generating video clips with Chinese video mod
 
 ```bash
 # In Claude Code — installs and auto-updates
-/plugin install videogen-wan@365-skills
+/plugin install videogenCN@365-skills
 ```
 
 **Claude Code (manual):**
 
 ```bash
 git clone https://github.com/Agents365-ai/videogenCN.git /tmp/videogenCN
-ln -s /tmp/videogenCN/skills/videogen-wan ~/.claude/skills/videogen-wan
+ln -s /tmp/videogenCN/skills/videogenCN ~/.claude/skills/videogenCN
 ```
 
 **Claude Code (project):**
 
 ```bash
 git clone https://github.com/Agents365-ai/videogenCN.git /tmp/videogenCN
-ln -s /tmp/videogenCN/skills/videogen-wan .claude/skills/videogen-wan
+ln -s /tmp/videogenCN/skills/videogenCN .claude/skills/videogenCN
 ```
 
 **OpenClaw:**
 
 ```bash
 git clone https://github.com/Agents365-ai/videogenCN.git /tmp/videogenCN
-ln -s /tmp/videogenCN/skills/videogen-wan ~/.openclaw/skills/videogen-wan
+ln -s /tmp/videogenCN/skills/videogenCN ~/.openclaw/skills/videogenCN
 ```
 
 ## Requirements
