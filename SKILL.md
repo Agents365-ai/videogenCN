@@ -3,7 +3,7 @@ name: videogen-wan
 description: Use when generating video clips with Chinese video models — text-to-video (文生视频), image-to-video (图生视频), first/last-frame and reference-to-video with Wan (通义万相), PixVerse (爱诗), Kling (可灵), Vidu, HappyHorse, Jimeng (即梦), and MiniMax (海螺 AI) via Alibaba Bailian / Volcengine / MiniMax APIs
 author: Agents365-ai
 created: 2026-07-05
-updated: 2026-07-08
+updated: 2026-07-09
 homepage: https://github.com/Agents365-ai/videogenCN
 metadata: {"openclaw":{"requires":{"bins":["python3"],"env":["DASHSCOPE_API_KEY"]},"primaryEnv":"DASHSCOPE_API_KEY","emoji":"🎬"}}
 ---
@@ -35,12 +35,91 @@ Local images: Wan and HappyHorse accept base64 data URIs directly; PixVerse/Klin
 
 ## Workflow
 
-1. Decide the mode from available inputs (see table above)
-2. Choose a provider (`--provider bailian|jimeng|minimax`) or let it auto-detect from `--model`
-3. Pick a model (or keep the mode default), duration, resolution, ratio
-4. Run the script; it blocks until the task finishes and saves the MP4
-5. If no output path is given, save to the current working directory
-6. **Cost note**: video APIs bill per second of output. For long or many clips, confirm with the user before submitting.
+### Step 0: Prompt Refinement (交互式提示词打磨)
+
+**CRITICAL — always run this step for t2v/i2v generation.** User prompts are often too short, vague, or missing key visual details that video models need. Claude acts as a prompt engineer to polish the prompt before generation.
+
+#### 0.1 Analyze the user's raw input
+
+Extract what's there and what's missing:
+
+| Dimension | Check |
+|-----------|-------|
+| **Subject** | Who/what is the main focus? Describe appearance, action, expression |
+| **Scene** | Where does it take place? Background, environment, atmosphere |
+| **Lighting** | Time of day? Light quality? (golden hour, neon, soft diffused, backlit) |
+| **Camera** | Shot type? (close-up, wide, aerial, tracking). Movement? (push-in, pan, orbit) |
+| **Mood/Style** | Emotional tone? Visual style? (cinematic, anime, documentary, surreal) |
+| **Motion** | What moves? How? Speed, direction, dynamics |
+| **Temporal** | Any sequence? Beginning→middle→end? |
+
+#### 0.2 Generate three refined variants
+
+Present **3 variants** in a table, each with a different creative direction:
+
+```
+| # | 风格方向 | 优化后提示词 | 建议参数 |
+|---|---------|-------------|---------|
+| 1 | [风格名]  | [完整中文提示词] | 5s / 16:9 / 1080P |
+| 2 | [风格名]  | [完整中文提示词] | 8s / 16:9 / 1080P |
+| 3 | [风格名]  | [完整中文提示词] | 5s / 9:16 / 1080P |
+```
+
+**Variant design principles:**
+- **Variant 1**: 忠于原意 — preserve the user's core idea, add rich visual detail, cinematic quality
+- **Variant 2**: 创造性发散 — a different artistic interpretation of the same core idea
+- **Variant 3**: 实用主义 — optimized for a specific platform format (vertical short-video, loopable clip, etc.)
+
+**Prompt writing rules for video models:**
+- Write in Chinese (all supported models optimize for Chinese)
+- Front-load the subject and core action (first 20 chars matter most)
+- Use concrete visual nouns ("金色麦田") not abstract concepts ("丰收的感觉")
+- Describe motion explicitly ("缓缓推近", "随风飘动", "从远到近奔跑")
+- Add camera and lighting cues at the end ("电影感镜头", "逆光剪影", "浅景深")
+- Keep within 150 characters — video prompts are not novels
+- For Wan 2.7 multi-shot: use `第N个镜头[N-Ns]: 描述` format
+
+#### 0.3 User feedback loop
+
+After presenting the three variants, ask the user to choose or give feedback. Accept these modifier keywords:
+
+| User says | Action |
+|-----------|--------|
+| "用第N个" / "N" | Use variant N as-is |
+| "更诗意" / "更浪漫" | Regenerate all three with more poetic/lyrical tone |
+| "更简洁" | Strip to essentials, shorter prompts |
+| "加动态元素" | Add more motion, action, kinetic energy |
+| "改为夜景" / "下雪" / etc | Apply specific scene change to all variants |
+| "混合1和3" | Combine subject of 1 with style of 3 |
+| "直接用" / "不改了" | Skip refinement, use raw prompt |
+| Custom feedback | Apply feedback and regenerate |
+
+**Iterate until the user explicitly approves** a prompt (says "好", "可以", "用这个", "生成吧", etc.), then proceed to Step 1.
+
+#### 0.4 Skip conditions
+
+Skip refinement when:
+- User explicitly says "直接生成" / "不用优化" / "skip"
+- The prompt is already detailed (>80 chars with visual details already present)
+- Mode is kf2v/r2v (reference images are the primary input)
+
+### Step 1: Decide mode and provider
+
+From the approved prompt and any `--image`/`--last-frame`/`--ref` inputs, determine:
+- **Mode**: t2v / i2v / kf2v / r2v (same auto-detection as before)
+- **Provider**: use `--provider` flag or auto-detect from model name
+- **Model**: use `--model` flag, or provider/model defaults
+- **Parameters**: duration, resolution, ratio from the variant's suggestion or user override
+
+### Step 2: Confirm and generate
+
+Show the final command and confirm with the user (especially for long/expensive generations). Run the script; it blocks until the task finishes and saves the MP4.
+
+### Step 3: Deliver
+
+Report the output path, file size, and generation time. If no output path was given, save to the current working directory.
+
+**Cost note**: video APIs bill per second of output. For long or many clips, confirm with the user before submitting.
 
 ## Providers
 
@@ -124,6 +203,45 @@ Simple Bearer token auth (`MINIMAX_API_KEY`). Three-step async flow (submit → 
 - Auth: Bearer token (`MINIMAX_API_KEY`)
 - Local images auto-uploaded via MiniMax file API
 - Prompt optimizer enabled by default
+
+## Prompt Refinement Examples
+
+These examples show the Step 0 interactive refinement in action.
+
+### Example 1: Vague short prompt
+
+User: "生成视频:一只猫"
+
+Claude responds with:
+> 你的原始提示词比较简短，我帮你打磨了三个版本：
+>
+> | # | 风格方向 | 优化后提示词 | 建议参数 |
+> |---|---------|-------------|---------|
+> | 1 | 温馨日常 | 一只橘猫蜷缩在窗台上，午后阳光透过纱帘洒在毛发上，猫咪眯着眼睛打盹，微风轻拂窗帘 | 5s / 16:9 |
+> | 2 | 灵动活泼 | 一只黑白奶牛猫在花园里追逐蝴蝶，敏捷跳跃，花瓣被带起在空中飞舞，慢动作特写 | 5s / 16:9 |
+> | 3 | 赛博朋克 | 一只发光机械猫在霓虹闪烁的雨夜街头行走，全息投影的鱼在它周围游动，科幻电影质感 | 5s / 9:16 |
+>
+> 你喜欢哪个方向？也可以说"更诗意""改为雪景""混合1和2"等。
+
+### Example 2: Iterative refinement
+
+User: "第二个不错，但是我想改成在森林里"
+
+Claude regenerates variant 2 with forest setting, maybe adjusting all three:
+
+> 好的，以森林为场景重新打磨：
+>
+> | # | 风格方向 | 优化后提示词 | 建议参数 |
+> |---|---------|-------------|---------|
+> | 1 | 灵动森林 | 一只黑白毛色的猫咪在晨光森林中轻盈跳跃，透过树叶的阳光形成光束，苔藓和蕨类植物环绕，慢动作 | 5s / 16:9 |
+> | 2 | 神秘森林 | 黑猫在迷雾森林中优雅行走，发光的蘑菇照亮小径，萤火虫在空气中浮动，奇幻电影画风 | 8s / 16:9 |
+> | 3 | 雨后森林 | 橘白色小猫在雨后的原始森林中探索，叶片上的水珠闪烁，丁达尔光束穿透树冠，微距镜头跟拍 | 5s / 16:9 |
+>
+> 哪个更接近你想要的？
+
+User: "用第1个，生成吧"
+
+Claude runs the script with the approved prompt.
 
 ## Usage
 
