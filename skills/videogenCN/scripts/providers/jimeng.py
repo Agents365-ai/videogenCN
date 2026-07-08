@@ -5,19 +5,13 @@ API docs: https://www.volcengine.com/docs/82379 (Ark Content Generation)
 Flow: POST /api/v3/contents/generations/tasks -> poll GET .../tasks/{id} -> download.
 """
 
-import base64
-import mimetypes
 import os
-import sys
 from typing import Optional
 
-try:
-    import requests
-except ImportError:
-    print("Error: 'requests' not installed. Run: pip install requests", file=sys.stderr)
-    sys.exit(1)
-
-from providers.base import VideoProvider
+from providers.base import (VideoProvider, GenerationRequest,
+                            safe_json, safe_request,
+                            encode_image_to_data_uri,
+                            ConfigError, InputError, APIError)
 
 
 class JimengProvider(VideoProvider):
@@ -25,20 +19,18 @@ class JimengProvider(VideoProvider):
     env_var = "ARK_API_KEY"
     _default_api_base = "https://ark.cn-beijing.volces.com/api/v3"
 
-    POLL_DEADLINE = 1800  # up to 15 minutes
+    POLL_DEADLINE = 1800
 
     @property
     def api_key(self) -> str:
-        # Primary: ARK_API_KEY; fallback: VOLCENGINE_ACCESS_KEY (legacy)
         for var in ("ARK_API_KEY", "VOLCENGINE_ACCESS_KEY"):
             key = os.environ.get(var, "")
             if key:
                 return key
-        print("Error: ARK_API_KEY environment variable not set.", file=sys.stderr)
-        print("Set it with: export ARK_API_KEY='your-api-key'", file=sys.stderr)
-        print("Get a key at: https://console.volcengine.com/ark/region:ark+cn-beijing/apikey",
-              file=sys.stderr)
-        sys.exit(1)
+        raise ConfigError(
+            "ARK_API_KEY environment variable not set.\n"
+            "Set it with: export ARK_API_KEY='your-api-key'\n"
+            "Get a key at: https://console.volcengine.com/ark/")
 
     def auth_headers(self) -> dict:
         return {"Authorization": f"Bearer {self.api_key}"}
@@ -56,9 +48,8 @@ class JimengProvider(VideoProvider):
 
     def check_mode(self, model: str, mode: str) -> None:
         if mode not in ("t2v", "i2v"):
-            print(f"Error: Jimeng provider only supports t2v and i2v, not '{mode}'.",
-                  file=sys.stderr)
-            sys.exit(1)
+            raise InputError(
+                f"Jimeng only supports t2v and i2v, not '{mode}'.")
 
     # ------------------------------------------------------------------
     # Media resolution
@@ -68,51 +59,41 @@ class JimengProvider(VideoProvider):
         """Jimeng Ark API accepts HTTP(S) URLs or base64 data URIs for images."""
         if path_or_url.startswith(("http://", "https://", "data:")):
             return path_or_url, False
-        if not os.path.exists(path_or_url):
-            print(f"Error: image not found: {path_or_url}", file=sys.stderr)
-            sys.exit(1)
-        mime = mimetypes.guess_type(path_or_url)[0] or "image/png"
-        with open(path_or_url, "rb") as f:
-            data = base64.b64encode(f.read()).decode()
-        return f"data:{mime};base64,{data}", False
+        return encode_image_to_data_uri(path_or_url), False
 
     # ------------------------------------------------------------------
     # Request body builder
     # ------------------------------------------------------------------
 
-    def build_body(self, model: str, mode: str, args,
+    def build_body(self, req: GenerationRequest,
                    image_url: Optional[str], last_url: Optional[str],
                    refs: list[tuple[Optional[str], str]]) -> dict:
-        # Build content array (Ark API uses content blocks with nested image_url)
         content: list[dict] = []
-        if mode == "i2v" and image_url:
+        if req.mode == "i2v" and image_url:
             content.append({
                 "type": "image_url",
                 "image_url": {"url": image_url},
                 "role": "first_frame",
             })
-        content.append({"type": "text", "text": args.prompt})
+        content.append({"type": "text", "text": req.prompt})
 
-        # For i2v, use adaptive ratio to match input image
-        ratio = "adaptive" if (mode == "i2v" and image_url) else args.ratio
+        ratio = "adaptive" if (req.mode == "i2v" and image_url) else req.ratio
 
         body: dict = {
-            "model": model,
+            "model": req.model,
             "content": content,
-            "duration": args.duration,
-            "resolution": args.resolution.lower().rstrip("p") + "p",
+            "duration": req.duration,
+            "resolution": req.resolution.lower().rstrip("p") + "p",
             "ratio": ratio,
             "watermark": False,
         }
 
-        if args.seed is not None:
-            body["seed"] = args.seed
-
-        # Seedance 2.0 advanced features
-        if args.audio:
+        if req.seed is not None:
+            body["seed"] = req.seed
+        if req.audio:
             body["generate_audio"] = True
-        if getattr(args, "camera_motion", None):
-            body["camera_motion"] = args.camera_motion
+        if req.camera_motion:
+            body["camera_motion"] = req.camera_motion
 
         return body
 
@@ -120,31 +101,26 @@ class JimengProvider(VideoProvider):
     # Async lifecycle
     # ------------------------------------------------------------------
 
-    def submit(self, body: dict) -> str:
+    def submit(self, body: dict, oss_used: bool = False) -> str:
         headers = {"Content-Type": "application/json", **self.auth_headers()}
-        rsp = requests.post(
-            f"{self.api_base}/contents/generations/tasks",
-            headers=headers, json=body, timeout=60)
-        data = rsp.json()
-        if rsp.status_code != 200:
-            print(f"Error: Jimeng submit failed ({rsp.status_code}): "
-                  f"{data.get('error', data)}", file=sys.stderr)
-            sys.exit(1)
+        data = safe_json(
+            safe_request("POST", f"{self.api_base}/contents/generations/tasks",
+                        headers=headers, json=body, label="Jimeng submit"),
+            label="Jimeng submit")
         task_id = data.get("id")
         if not task_id:
-            print(f"Error: no task id in Jimeng response: {data}", file=sys.stderr)
-            sys.exit(1)
+            raise APIError(f"no task id in Jimeng response: {data}")
         return task_id
 
     def _poll_request(self, task_id: str):
         headers = self.auth_headers()
-        return requests.get(
+        return safe_request("GET",
             f"{self.api_base}/contents/generations/tasks/{task_id}",
-            headers=headers, timeout=30)
+            headers=headers, label="Jimeng poll")
 
     def _parse_poll_response(self, rsp) -> tuple[str, Optional[str], str]:
         """Ark API returns: {id, status, content: {video_url}, ...}"""
-        data = rsp.json()
+        data = safe_json(rsp, "Jimeng poll")
         status = data.get("status", "unknown")
         if status == "succeeded":
             video_url = data.get("content", {}).get("video_url", "")
@@ -152,7 +128,6 @@ class JimengProvider(VideoProvider):
         if status in ("failed", "expired", "cancelled"):
             err = data.get("error", {}).get("message", str(data))
             return "FAILED", None, err
-        # queued / running / pending
         return status, None, ""
 
     # ------------------------------------------------------------------
@@ -168,7 +143,7 @@ class JimengProvider(VideoProvider):
             "  doubao-seedance-1-0-pro (1.0 standard)",
             "",
             "Env vars:",
-            "  ARK_API_KEY (required) — https://console.volcengine.com/ark/region:ark+cn-beijing/apikey",
+            "  ARK_API_KEY (required) — https://console.volcengine.com/ark/",
             "",
             "Features: t2v/i2v, native audio, up to 15s, 1080p/2K, lip-sync, camera control",
         ]

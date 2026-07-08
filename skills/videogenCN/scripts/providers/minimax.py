@@ -7,16 +7,11 @@ Flow: POST /video_generation -> poll GET /query/video_generation
 """
 
 import os
-import sys
 from typing import Optional
 
-try:
-    import requests
-except ImportError:
-    print("Error: 'requests' not installed. Run: pip install requests", file=sys.stderr)
-    sys.exit(1)
-
-from providers.base import VideoProvider
+from providers.base import (VideoProvider, GenerationRequest,
+                            safe_json, safe_request, validate_media_file,
+                            ConfigError, InputError, APIError)
 
 
 class MiniMaxProvider(VideoProvider):
@@ -24,17 +19,16 @@ class MiniMaxProvider(VideoProvider):
     env_var = "MINIMAX_API_KEY"
     _default_api_base = "https://api.minimax.chat/v1"
 
-    # MiniMax jobs usually complete within 5-10 minutes
     POLL_DEADLINE = 1200
 
     @property
     def api_key(self) -> str:
         key = os.environ.get(self.env_var, "")
         if not key:
-            print(f"Error: {self.env_var} environment variable not set.", file=sys.stderr)
-            print("Get a key at: https://platform.minimax.io", file=sys.stderr)
-            print(f"Set it with: export {self.env_var}='your-api-key'", file=sys.stderr)
-            sys.exit(1)
+            raise ConfigError(
+                f"{self.env_var} environment variable not set.\n"
+                f"Get a key at: https://platform.minimax.io\n"
+                f"Set it with: export {self.env_var}='your-api-key'")
         return key
 
     def auth_headers(self) -> dict:
@@ -53,9 +47,17 @@ class MiniMaxProvider(VideoProvider):
 
     def check_mode(self, model: str, mode: str) -> None:
         if mode not in ("t2v", "i2v"):
-            print(f"Error: MiniMax only supports t2v and i2v, not '{mode}'.",
-                  file=sys.stderr)
-            sys.exit(1)
+            raise InputError(
+                f"MiniMax only supports t2v and i2v, not '{mode}'.")
+
+    def validate_params(self, req: GenerationRequest) -> None:
+        import sys
+        if req.duration > 6:
+            print(f"Warning: MiniMax video-01 supports up to 6s; "
+                  f"requested {req.duration}s may fail.", file=sys.stderr)
+        if req.resolution != "1080P":
+            print(f"Warning: MiniMax video-01 outputs at 720P; "
+                  f"--resolution {req.resolution} is ignored.", file=sys.stderr)
 
     # ------------------------------------------------------------------
     # Media resolution
@@ -65,10 +67,7 @@ class MiniMaxProvider(VideoProvider):
         """MiniMax accepts HTTP(S) URLs directly. Local files are uploaded."""
         if path_or_url.startswith(("http://", "https://")):
             return path_or_url, False
-        if not os.path.exists(path_or_url):
-            print(f"Error: image not found: {path_or_url}", file=sys.stderr)
-            sys.exit(1)
-        # Upload local file to MiniMax, get file_id back
+        validate_media_file(path_or_url)
         file_id = self._upload_file(path_or_url)
         return file_id, False
 
@@ -76,18 +75,15 @@ class MiniMaxProvider(VideoProvider):
         """Upload a local file via MiniMax's file upload API. Returns file_id."""
         fname = os.path.basename(path)
         with open(path, "rb") as f:
-            rsp = requests.post(
-                f"{self.api_base}/files/upload",
-                headers=self.auth_headers(),
-                files={"file": (fname, f)},
-                data={"purpose": "video_generation"},
-                timeout=60)
-        rsp.raise_for_status()
-        data = rsp.json()
+            rsp = safe_request("POST", f"{self.api_base}/files/upload",
+                              headers=self.auth_headers(),
+                              files={"file": (fname, f)},
+                              data={"purpose": "video_generation"},
+                              label="MiniMax file upload")
+        data = safe_json(rsp, "MiniMax file upload")
         file_id = data.get("file", {}).get("file_id")
         if not file_id:
-            print(f"Error: MiniMax file upload failed: {data}", file=sys.stderr)
-            sys.exit(1)
+            raise APIError(f"MiniMax file upload failed: {data}")
         print(f"Uploaded {path} -> MiniMax (file_id: {file_id})")
         return file_id
 
@@ -95,18 +91,17 @@ class MiniMaxProvider(VideoProvider):
     # Request body builder
     # ------------------------------------------------------------------
 
-    def build_body(self, model: str, mode: str, args,
+    def build_body(self, req: GenerationRequest,
                    image_url: Optional[str], last_url: Optional[str],
                    refs: list[tuple[Optional[str], str]]) -> dict:
         body: dict = {
-            "model": model,
-            "prompt": args.prompt,
-            "duration": args.duration,
-            "prompt_optimizer": True,
+            "model": req.model,
+            "prompt": req.prompt,
+            "duration": req.duration,
+            "prompt_optimizer": not req.no_prompt_optimizer,
         }
 
-        if mode == "i2v" and image_url:
-            # image_url may be an http(s) URL or a file_id from upload
+        if req.mode == "i2v" and image_url:
             if image_url.startswith(("http://", "https://")):
                 body["first_frame_image"] = image_url
             else:
@@ -118,46 +113,46 @@ class MiniMaxProvider(VideoProvider):
     # Async lifecycle
     # ------------------------------------------------------------------
 
-    def submit(self, body: dict) -> str:
+    def submit(self, body: dict, oss_used: bool = False) -> str:
         headers = {"Content-Type": "application/json", **self.auth_headers()}
-        rsp = requests.post(f"{self.api_base}/video_generation",
-                            headers=headers, json=body, timeout=60)
-        data = rsp.json()
-        if rsp.status_code != 200:
-            err = data.get("base_resp", {})
-            print(f"Error: MiniMax submit failed ({rsp.status_code}): "
-                  f"{err.get('status_code')} {err.get('status_msg')}", file=sys.stderr)
-            sys.exit(1)
+        data = safe_json(
+            safe_request("POST", f"{self.api_base}/video_generation",
+                        headers=headers, json=body, label="MiniMax submit"),
+            label="MiniMax submit")
         task_id = data.get("task_id")
         if not task_id:
-            print(f"Error: no task_id in MiniMax response: {data}", file=sys.stderr)
-            sys.exit(1)
+            raise APIError(f"no task_id in MiniMax response: {data}")
         return task_id
 
     def _poll_request(self, task_id: str):
         headers = self.auth_headers()
-        return requests.get(
+        return safe_request("GET",
             f"{self.api_base}/query/video_generation",
             params={"task_id": task_id},
-            headers=headers, timeout=30)
+            headers=headers, label="MiniMax poll")
 
     def _parse_poll_response(self, rsp) -> tuple[str, Optional[str], str]:
-        data = rsp.json()
+        data = safe_json(rsp, "MiniMax poll")
         status = data.get("status", "UNKNOWN")
         if status == "Success":
             file_id = data.get("file_id", "")
             if file_id:
-                # Fetch download URL
-                dl_rsp = requests.get(
-                    f"{self.api_base}/files/retrieve",
-                    params={"file_id": file_id},
-                    headers=self.auth_headers(), timeout=30)
-                dl_data = dl_rsp.json()
+                dl_data = safe_json(
+                    safe_request("GET", f"{self.api_base}/files/retrieve",
+                                params={"file_id": file_id},
+                                headers=self.auth_headers(),
+                                label="MiniMax download URL"),
+                    label="MiniMax download URL")
                 video_url = dl_data.get("file", {}).get("download_url", "")
                 return "SUCCEEDED", video_url, ""
             return "SUCCEEDED", None, "no file_id"
+        if status in ("Fail", "Failed", "Error", "Timeout", "Cancelled"):
+            err = data.get("base_resp", {})
+            return "FAILED", None, f"{err.get('status_code', '')} {err.get('status_msg', '')}"
+        if status in ("Processing", "Queueing"):
+            return "processing", None, ""
         err = data.get("base_resp", {})
-        return status, None, f"{err.get('status_code', '')} {err.get('status_msg', '')}"
+        return "UNKNOWN", None, f"status={status} {err.get('status_code', '')} {err.get('status_msg', '')}"
 
     # ------------------------------------------------------------------
     # Model listing

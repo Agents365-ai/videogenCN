@@ -4,20 +4,15 @@ Supports five model families through the unified DashScope API gateway:
 Wan (通义万相), PixVerse (爱诗), Kling (可灵), Vidu, HappyHorse.
 """
 
-import base64
-import mimetypes
 import os
 import sys
 from pathlib import Path
 from typing import Optional
 
-try:
-    import requests
-except ImportError:
-    print("Error: 'requests' not installed. Run: pip install requests", file=sys.stderr)
-    sys.exit(1)
-
-from providers.base import VideoProvider, pick_size
+from providers.base import (VideoProvider, GenerationRequest, pick_size,
+                            safe_json, safe_request, validate_media_file,
+                            encode_image_to_data_uri,
+                            ConfigError, InputError, APIError)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -47,7 +42,7 @@ WAN_I2V = {"wan2.6-i2v-flash", "wan2.6-i2v", "wan2.5-i2v-preview",
            "wanx2.1-i2v-turbo", "wanx2.1-i2v-plus"}
 WAN_AUDIO_TOGGLE = {"wan2.6-i2v-flash", "wan2.5-t2v-preview", "wan2.5-i2v-preview"}
 
-# Third-party families (model code -> mode via suffix)
+# Third-party families
 PIXVERSE_VERSIONS = ("c1", "v6", "v5.6")
 VIDU_MODELS: dict[str, list[str]] = {
     "t2v": ["vidu/viduq3-pro_text2video", "vidu/viduq3-turbo_text2video",
@@ -78,6 +73,16 @@ class BailianProvider(VideoProvider):
     def api_base(self) -> str:
         base = os.environ.get("DASHSCOPE_API_BASE", DEFAULT_API_BASE)
         return API_ENDPOINTS.get(base, base)
+
+    @property
+    def api_key(self) -> str:
+        val = os.environ.get(self.env_var)
+        if not val:
+            raise ConfigError(
+                f"{self.env_var} environment variable not set.\n"
+                f"Set it with: export {self.env_var}='your-api-key'\n"
+                f"Get a key at: https://bailian.console.aliyun.com/")
+        return val
 
     def auth_headers(self) -> dict:
         return {"Authorization": f"Bearer {self.api_key}"}
@@ -110,27 +115,15 @@ class BailianProvider(VideoProvider):
     # Media resolution
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _encode_image(path: str) -> str:
-        """Encode a local image file as a base64 data URI (Wan/HappyHorse only)."""
-        p = Path(path)
-        mime = mimetypes.guess_type(str(p))[0] or "image/png"
-        data = base64.b64encode(p.read_bytes()).decode()
-        return f"data:{mime};base64,{data}"
-
     def _upload_file(self, model: str, path: str) -> str:
-        """Upload a local file to DashScope temporary storage, return oss:// URL.
-
-        Needed for families that only accept public URLs (PixVerse, Kling, Vidu).
-        The oss:// URL requires the X-DashScope-OssResourceResolve header on submit.
-        """
-        api_key = self.api_key
-        rsp = requests.get(
-            f"{self.api_base}/uploads",
+        """Upload a local file to DashScope temporary storage, return oss:// URL."""
+        validate_media_file(path)
+        rsp = safe_request(
+            "GET", f"{self.api_base}/uploads",
             params={"action": "getPolicy", "model": model},
-            headers={"Authorization": f"Bearer {api_key}"}, timeout=30)
-        rsp.raise_for_status()
-        data = rsp.json()["data"]
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            label="Bailian upload policy")
+        data = safe_json(rsp, "Bailian upload policy")["data"]
         key = f"{data['upload_dir']}/{Path(path).name}"
         form = {
             "OSSAccessKeyId": data["oss_access_key_id"],
@@ -142,9 +135,9 @@ class BailianProvider(VideoProvider):
             "success_action_status": "200",
         }
         with open(path, "rb") as f:
-            up = requests.post(data["upload_host"], data=form,
-                               files={"file": (Path(path).name, f)}, timeout=120)
-        up.raise_for_status()
+            safe_request("POST", data["upload_host"], data=form,
+                        files={"file": (Path(path).name, f)},
+                        timeout=120, label="Bailian OSS upload")
         print(f"Uploaded {path} -> oss (48h temporary URL)")
         return f"oss://{key}"
 
@@ -157,20 +150,17 @@ class BailianProvider(VideoProvider):
             return path_or_url, False
         if path_or_url.startswith("oss://"):
             return path_or_url, True
-        if not os.path.exists(path_or_url):
-            print(f"Error: image not found: {path_or_url}", file=sys.stderr)
-            sys.exit(1)
         family = self._family(model) if model else "wan"
         if family in ("wan", "happyhorse"):
-            return self._encode_image(path_or_url), False
+            return encode_image_to_data_uri(path_or_url), False
         return self._upload_file(model, path_or_url), True
 
     # ------------------------------------------------------------------
-    # Mode validation
+    # Mode / param validation
     # ------------------------------------------------------------------
 
     def check_mode(self, model: str, mode: str) -> None:
-        """Verify the model variant matches the requested mode; exit with hint if not."""
+        """Verify the model variant matches the requested mode."""
         family = self._family(model)
         ok, hint = True, None
         if family == "wan":
@@ -179,75 +169,87 @@ class BailianProvider(VideoProvider):
             elif mode == "t2v":
                 ok = "t2v" in model
             else:
-                ok, hint = False, (f"Wan models here support t2v/i2v only; use e.g. "
-                                   f"'{DEFAULT_MODELS[mode]}' for {mode}")
+                ok, hint = False, (
+                    f"Wan models support t2v/i2v only; "
+                    f"use e.g. '{DEFAULT_MODELS[mode]}' for {mode}")
         elif family == "pixverse":
             suffix = {"t2v": "-t2v", "i2v": "-it2v", "kf2v": "-kf2v", "r2v": "-r2v"}[mode]
             ok = model.endswith(suffix)
             hint = f"PixVerse {mode} needs a model ending in '{suffix}'"
         elif family == "vidu":
-            suffix = {"t2v": "_text2video", "i2v": "_img2video",
-                      "kf2v": "_start-end2video"}.get(mode)
+            suffix_map = {"t2v": "_text2video", "i2v": "_img2video",
+                          "kf2v": "_start-end2video"}
+            suffix = suffix_map.get(mode)
             ok = suffix is not None and model.endswith(suffix)
             hint = (f"Vidu {mode} needs a model ending in '{suffix}'" if suffix
-                    else "Vidu has no r2v variant here; use PixVerse or Kling omni")
+                    else "Vidu has no r2v variant; use PixVerse or Kling omni")
         elif family == "kling":
             if mode == "r2v":
                 ok = model.endswith("omni-video-generation")
-                hint = "Kling reference generation needs kling/kling-v3-omni-video-generation"
+                hint = "Kling r2v needs kling/kling-v3-omni-video-generation"
         else:  # happyhorse
-            suffix = {"t2v": "-t2v", "i2v": "-i2v"}.get(mode)
+            suffix_map = {"t2v": "-t2v", "i2v": "-i2v"}
+            suffix = suffix_map.get(mode)
             ok = suffix is not None and model.endswith(suffix)
             hint = (f"HappyHorse {mode} needs a model ending in '{suffix}'" if suffix
-                    else "HappyHorse here supports t2v/i2v only")
+                    else "HappyHorse supports t2v/i2v only")
         if not ok:
-            print(f"Error: model '{model}' does not match mode '{mode}'. {hint}",
-                  file=sys.stderr)
-            sys.exit(1)
+            raise InputError(
+                f"model '{model}' does not match mode '{mode}'. {hint}")
+
+    def validate_params(self, req: GenerationRequest) -> None:
+        family = self._family(req.model)
+        if req.model.startswith("wanx2.1") and req.mode == "t2v":
+            if req.duration != 5:
+                print(f"Warning: {req.model} does not support custom duration; "
+                      f"requested {req.duration}s is ignored.", file=sys.stderr)
+        if family == "pixverse" and req.ratio not in ("16:9", "9:16"):
+            print(f"Warning: PixVerse may not support ratio {req.ratio}; "
+                  f"try 16:9 or 9:16.", file=sys.stderr)
 
     # ------------------------------------------------------------------
     # Request body builder
     # ------------------------------------------------------------------
 
-    def build_body(self, model: str, mode: str, args,
+    def build_body(self, req: GenerationRequest,
                    image_url: Optional[str], last_url: Optional[str],
                    refs: list[tuple[Optional[str], str]]) -> dict:
-        family = self._family(model)
-        inp: dict = {"prompt": args.prompt}
-        params: dict = {"duration": args.duration, "watermark": False}
+        family = self._family(req.model)
+        inp: dict = {"prompt": req.prompt}
+        params: dict = {"duration": req.duration, "watermark": False}
 
-        if model.startswith("wanx2.1") and mode == "t2v":
-            del params["duration"]  # wanx2.1 t2v does not support custom duration
-        if args.seed is not None and family != "kling":
-            params["seed"] = args.seed
+        if req.model.startswith("wanx2.1") and req.mode == "t2v":
+            del params["duration"]
+        if req.seed is not None and family != "kling":
+            params["seed"] = req.seed
 
         if family == "wan":
-            if args.negative:
-                inp["negative_prompt"] = args.negative
-            params["prompt_extend"] = not args.no_prompt_extend
-            if mode == "i2v":
+            if req.negative:
+                inp["negative_prompt"] = req.negative
+            params["prompt_extend"] = not req.no_prompt_extend
+            if req.mode == "i2v":
                 inp["img_url"] = image_url
-                params["resolution"] = args.resolution
-            elif model in WAN_T2V_RATIO:
-                params["resolution"] = args.resolution
-                params["ratio"] = args.ratio
+                params["resolution"] = req.resolution
+            elif req.model in WAN_T2V_RATIO:
+                params["resolution"] = req.resolution
+                params["ratio"] = req.ratio
             else:
-                params["size"] = pick_size(args)
-            if args.no_audio and model in WAN_AUDIO_TOGGLE:
+                params["size"] = pick_size(req)
+            if req.no_audio and req.model in WAN_AUDIO_TOGGLE:
                 params["audio"] = False
 
         elif family == "pixverse":
-            params["audio"] = args.audio
-            if mode == "t2v":
-                params["size"] = pick_size(args)
-            elif mode == "i2v":
+            params["audio"] = req.audio
+            if req.mode == "t2v":
+                params["size"] = pick_size(req)
+            elif req.mode == "i2v":
                 inp["media"] = [{"type": "image_url", "url": image_url}]
-                params["resolution"] = args.resolution
-            elif mode == "kf2v":
+                params["resolution"] = req.resolution
+            elif req.mode == "kf2v":
                 inp["media"] = [{"type": "first_frame", "url": image_url},
                                 {"type": "last_frame", "url": last_url}]
-                params["resolution"] = args.resolution
-            else:  # r2v: reference prompt uses "@ref_name " syntax
+                params["resolution"] = req.resolution
+            else:  # r2v
                 media = []
                 for name, url in refs:
                     item: dict = {"type": "image_url", "url": url}
@@ -255,12 +257,12 @@ class BailianProvider(VideoProvider):
                         item["ref_name"] = name
                     media.append(item)
                 inp["media"] = media
-                params["size"] = pick_size(args)
+                params["size"] = pick_size(req)
 
         elif family == "kling":
-            params["mode"] = "pro" if args.resolution == "1080P" else "std"
-            params["aspect_ratio"] = args.ratio
-            params["audio"] = args.audio
+            params["mode"] = "pro" if req.resolution == "1080P" else "std"
+            params["aspect_ratio"] = req.ratio
+            params["audio"] = req.audio
             media: list = []
             if image_url:
                 media.append({"type": "first_frame", "url": image_url})
@@ -271,26 +273,26 @@ class BailianProvider(VideoProvider):
                 inp["media"] = media
 
         elif family == "vidu":
-            params["resolution"] = args.resolution
-            if args.audio:
-                params["audio"] = True  # viduq3 only
-            if mode == "i2v":
+            params["resolution"] = req.resolution
+            if req.audio:
+                params["audio"] = True
+            if req.mode == "i2v":
                 inp["media"] = [{"type": "image", "url": image_url}]
-            elif mode == "kf2v":  # first array element = opening frame, second = closing
+            elif req.mode == "kf2v":
                 inp["media"] = [{"type": "image", "url": image_url},
                                 {"type": "image", "url": last_url}]
 
         else:  # happyhorse
-            params["resolution"] = args.resolution
-            if mode == "t2v":
-                params["ratio"] = args.ratio
+            params["resolution"] = req.resolution
+            if req.mode == "t2v":
+                params["ratio"] = req.ratio
             else:
                 inp["media"] = [{"type": "first_frame", "url": image_url}]
 
-        return {"model": model, "input": inp, "parameters": params}
+        return {"model": req.model, "input": inp, "parameters": params}
 
     # ------------------------------------------------------------------
-    # Async lifecycle: submit / poll / download
+    # Async lifecycle
     # ------------------------------------------------------------------
 
     def submit(self, body: dict, oss_used: bool = False) -> str:
@@ -301,23 +303,24 @@ class BailianProvider(VideoProvider):
         }
         if oss_used:
             headers["X-DashScope-OssResourceResolve"] = "enable"
-        rsp = requests.post(self.api_base + SUBMIT_PATH, headers=headers,
-                            json=body, timeout=60)
-        data = rsp.json()
+        data = safe_json(
+            safe_request("POST", self.api_base + SUBMIT_PATH, headers=headers,
+                        json=body, label="Bailian submit"),
+            label="Bailian submit")
         task_id = data.get("output", {}).get("task_id")
-        if rsp.status_code != 200 or not task_id:
-            print(f"Error: submit failed ({rsp.status_code}): "
-                  f"{data.get('code')} {data.get('message')}", file=sys.stderr)
-            sys.exit(1)
+        if not task_id:
+            raise APIError(
+                f"Bailian submit failed: "
+                f"{data.get('code')} {data.get('message')}")
         return task_id
 
     def _poll_request(self, task_id: str):
         headers = self.auth_headers()
-        return requests.get(f"{self.api_base}/tasks/{task_id}",
-                            headers=headers, timeout=30)
+        return safe_request("GET", f"{self.api_base}/tasks/{task_id}",
+                           headers=headers, label="Bailian poll")
 
     def _parse_poll_response(self, rsp) -> tuple[str, Optional[str], str]:
-        output = rsp.json().get("output", {})
+        output = safe_json(rsp, "Bailian poll").get("output", {})
         status = output.get("task_status", "UNKNOWN")
         video_url = output.get("video_url")
         err = f"{output.get('code', '')} {output.get('message', '')}"
