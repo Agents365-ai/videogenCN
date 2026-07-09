@@ -1,5 +1,10 @@
 # videogenCN 🎬
 
+[![License: CC BY-NC 4.0](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](LICENSE)
+[![Claude Code](https://img.shields.io/badge/Claude%20Code-skill-6C3C97)](https://claude.ai/code)
+[![OpenClaw](https://img.shields.io/badge/OpenClaw-compatible-orange)](https://openclaw.ai)
+[![SkillsMP](https://img.shields.io/badge/SkillsMP-indexed-blue)](https://skillsmp.com)
+
 [English](README.md)
 
 一个 Claude Code / OpenClaw 技能，通过四大平台调用国产视频大模型生成视频片段 —— 阿里云百炼（万相/PixVerse/可灵/Vidu/HappyHorse）、火山引擎（即梦）、MiniMax（海螺 AI）、腾讯混元。
