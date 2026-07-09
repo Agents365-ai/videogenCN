@@ -1,5 +1,10 @@
 # videogenCN 🎬
 
+[![License: CC BY-NC 4.0](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](LICENSE)
+[![Claude Code](https://img.shields.io/badge/Claude%20Code-skill-6C3C97)](https://claude.ai/code)
+[![OpenClaw](https://img.shields.io/badge/OpenClaw-compatible-orange)](https://openclaw.ai)
+[![SkillsMP](https://img.shields.io/badge/SkillsMP-indexed-blue)](https://skillsmp.com)
+
 [中文文档](README_CN.md)
 
 A Claude Code / OpenClaw skill for generating video clips with Chinese video models across four providers — Alibaba Bailian (Wan/PixVerse/Kling/Vidu/HappyHorse), Volcengine Ark (Jimeng/即梦), MiniMax (海螺 AI), and Tencent Hunyuan (混元).
