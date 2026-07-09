@@ -4,19 +4,6 @@
 
 A Claude Code / OpenClaw skill for generating video clips with Chinese video models across four providers — Alibaba Bailian (Wan/PixVerse/Kling/Vidu/HappyHorse), Volcengine Ark (Jimeng/即梦), MiniMax (海螺 AI), and Tencent Hunyuan (混元).
 
-## Why This Skill?
-
-| | Native Claude Code | videogenCN |
-|---|---|---|
-| Text-to-video | ❌ | ✅ 7 model families across 4 providers |
-| Image-to-video | ❌ | ✅ Animate any still image |
-| First+last frame (kf2v) | ❌ | ✅ PixVerse / Kling / Vidu |
-| Reference-to-video (r2v) | ❌ | ✅ Character-consistent clips |
-| Multi-provider | ❌ | ✅ Bailian + Jimeng + MiniMax + Hunyuan |
-| Chinese prompts | — | ✅ First-class |
-| Async task handling | — | ✅ Submit → poll → download, resumable |
-| Vertical (9:16) video | — | ✅ For Douyin / Xiaohongshu / Shorts |
-
 ## Features
 
 - **Four modes, one script**: prompt → t2v; `--image` → i2v; `+ --last-frame` → kf2v; `--ref name=img` → r2v
@@ -31,34 +18,25 @@ A Claude Code / OpenClaw skill for generating video clips with Chinese video mod
 
 ![videogenCN Pipeline](assets/workflow-en.png)
 
-## Install the Skill
+## Install
 
-**365-Skills Marketplace (recommended):**
+**In a coding agent** — tell it:
+
+> help me to install https://github.com/Agents365-ai/videogenCN.git
+
+**365-Skills Marketplace** (in Claude Code):
 
 ```bash
-# In Claude Code — installs and auto-updates
 /plugin install videogenCN@365-skills
 ```
 
-**Claude Code (manual):**
+**Manual:**
 
 ```bash
 git clone https://github.com/Agents365-ai/videogenCN.git /tmp/videogenCN
-ln -s /tmp/videogenCN/skills/videogenCN ~/.claude/skills/videogenCN
-```
-
-**Claude Code (project):**
-
-```bash
-git clone https://github.com/Agents365-ai/videogenCN.git /tmp/videogenCN
-ln -s /tmp/videogenCN/skills/videogenCN .claude/skills/videogenCN
-```
-
-**OpenClaw:**
-
-```bash
-git clone https://github.com/Agents365-ai/videogenCN.git /tmp/videogenCN
-ln -s /tmp/videogenCN/skills/videogenCN ~/.openclaw/skills/videogenCN
+ln -s /tmp/videogenCN/skills/videogenCN ~/.claude/skills/videogenCN  # global
+# or: ln -s /tmp/videogenCN/skills/videogenCN .claude/skills         # project
+# or: ln -s /tmp/videogenCN/skills/videogenCN ~/.openclaw/skills     # OpenClaw
 ```
 
 ## Requirements

@@ -4,19 +4,6 @@
 
 一个 Claude Code / OpenClaw 技能，通过四大平台调用国产视频大模型生成视频片段 —— 阿里云百炼（万相/PixVerse/可灵/Vidu/HappyHorse）、火山引擎（即梦）、MiniMax（海螺 AI）、腾讯混元。
 
-## 为什么选择这个技能
-
-| | 原生 Claude Code | videogenCN |
-|---|---|---|
-| 文生视频 | ❌ | ✅ 7 个模型家族，4 个平台 |
-| 图生视频 | ❌ | ✅ 让任意静态图片动起来 |
-| 首尾帧生视频 | ❌ | ✅ PixVerse / Kling / Vidu |
-| 参考生视频(角色一致性) | ❌ | ✅ PixVerse r2v / Kling omni |
-| 多平台 | ❌ | ✅ 百炼 + 即梦 + MiniMax + 混元 |
-| 中文提示词 | — | ✅ 原生支持 |
-| 异步任务处理 | — | ✅ 提交 → 轮询 → 下载，可断点续接 |
-| 竖屏(9:16)视频 | — | ✅ 适配抖音 / 小红书 / Shorts |
-
 ## 特性
 
 - **一个脚本四种模式**:提示词 → 文生视频;`--image` → 图生视频;再加 `--last-frame` → 首尾帧;`--ref 名字=图片` → 参考生视频
@@ -31,34 +18,25 @@
 
 ![videogenCN 流程图](assets/workflow-zh.png)
 
-## 安装技能
+## 安装
 
-**365-Skills 市场（推荐）：**
+**在 coding agent 中** — 输入：
+
+> help me to install https://github.com/Agents365-ai/videogenCN.git
+
+**365-Skills 市场**（在 Claude Code 中）：
 
 ```bash
-# 在 Claude Code 中 — 自动安装和更新
 /plugin install videogenCN@365-skills
 ```
 
-**Claude Code（手动全局）：**
+**手动安装：**
 
 ```bash
 git clone https://github.com/Agents365-ai/videogenCN.git /tmp/videogenCN
-ln -s /tmp/videogenCN/skills/videogenCN ~/.claude/skills/videogenCN
-```
-
-**Claude Code（项目级）：**
-
-```bash
-git clone https://github.com/Agents365-ai/videogenCN.git /tmp/videogenCN
-ln -s /tmp/videogenCN/skills/videogenCN .claude/skills/videogenCN
-```
-
-**OpenClaw：**
-
-```bash
-git clone https://github.com/Agents365-ai/videogenCN.git /tmp/videogenCN
-ln -s /tmp/videogenCN/skills/videogenCN ~/.openclaw/skills/videogenCN
+ln -s /tmp/videogenCN/skills/videogenCN ~/.claude/skills/videogenCN  # 全局
+# 或：ln -s /tmp/videogenCN/skills/videogenCN .claude/skills         # 项目级
+# 或：ln -s /tmp/videogenCN/skills/videogenCN ~/.openclaw/skills     # OpenClaw
 ```
 
 ## 系统要求
