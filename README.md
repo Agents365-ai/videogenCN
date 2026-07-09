@@ -195,14 +195,14 @@ If this project helps you, consider supporting the author:
   </tr>
 </table>
 
-## License
-
-This project is licensed under **CC BY-NC 4.0** — free for non-commercial use.
-Commercial use requires permission. See the [LICENSE](LICENSE) file for details.
-
 ## Author
 
 **Agents365-ai**
 
 - Bilibili: https://space.bilibili.com/441831884
 - GitHub: https://github.com/Agents365-ai
+
+## License
+
+This project is licensed under **CC BY-NC 4.0** — free for non-commercial use.
+Commercial use requires permission. See the [LICENSE](LICENSE) file for details.
