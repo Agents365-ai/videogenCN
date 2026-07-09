@@ -197,7 +197,8 @@ python scripts/generate_video.py "金黄色的麦田在秋风中起伏" field.mp
 
 ## 许可证
 
-MIT
+本项目采用 **CC BY-NC 4.0** 许可协议 — 允许非商业用途免费使用。
+商业用途需获得作者授权。详见 [LICENSE](LICENSE) 文件。
 
 ## 作者
 
