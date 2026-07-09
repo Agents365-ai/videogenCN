@@ -197,7 +197,8 @@ If this project helps you, consider supporting the author:
 
 ## License
 
-MIT
+This project is licensed under **CC BY-NC 4.0** — free for non-commercial use.
+Commercial use requires permission. See the [LICENSE](LICENSE) file for details.
 
 ## Author
 
